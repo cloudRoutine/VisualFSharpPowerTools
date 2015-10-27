@@ -3,6 +3,28 @@
 open System
 open System.Diagnostics
 
+[<AutoOpen>]
+module Prelude =
+    /// obj.ReferenceEquals
+    let inline (==) a b = obj.ReferenceEquals(a, b)
+    /// LanguagePrimitives.PhysicalEquality
+    let inline (===) a b = LanguagePrimitives.PhysicalEquality a b
+    let inline debug msg = Printf.kprintf Debug.WriteLine msg
+    let inline fail msg = Printf.kprintf Debug.Fail msg
+    let inline isNull v = match v with | null -> true | _ -> false
+    let inline isNotNull v = v |> (not << isNull)
+    /// Dereference a reference cell
+    let inline deref refval = !refval
+    
+    let tryCast<'T> (o: obj): 'T option = 
+        match o with
+        | null -> None
+        | :? 'T as a -> Some a
+        | _ -> 
+            debug "Cannot cast %O to %O" (o.GetType()) typeof<'T>.Name
+            None
+
+
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Seq =
@@ -27,6 +49,22 @@ module List =
             | _ -> List.rev acc
         loop [] xs
 
+    let foldi (folder:'State -> int -> 'T -> 'State) (state:'State) (xs:'T list) =        
+        match xs with 
+        | [] -> state
+        | _ -> 
+            let f = OptimizedClosures.FSharpFunc<_,_,_,_>.Adapt(folder)
+            let rec loop idx s xs = 
+                match xs with 
+                | [] -> s
+                | h::t -> loop (idx+1) (f.Invoke(s,idx,h)) t
+            loop 0 state xs
+
+    /// apply the map to all elements that satisfy the predicate
+    let inline filterMap predicate map xs = 
+        ([], xs) ||> List.fold (fun acc elm -> if predicate elm then (map elm)::acc else acc )
+
+
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Array =
@@ -37,6 +75,8 @@ module Array =
 
     /// Returns true if one array has another as its subset from index 0.
     let startsWith (prefix: _ []) (whole: _ []) =
+        checkNonNull "prefix" prefix
+        checkNonNull "whole"  whole
         let rec loop index =
             if index > prefix.Length - 1 then true
             elif index > whole.Length - 1 then false
@@ -46,6 +86,8 @@ module Array =
 
     /// Returns true if one array has trailing elements equal to another's.
     let endsWith (suffix: _ []) (whole: _ []) =
+        checkNonNull "suffix" suffix
+        checkNonNull "whole"  whole
         let suffixLength = suffix.Length
         let wholeLength = whole.Length
         let rec loop step =
@@ -59,26 +101,36 @@ module Array =
         else loop 1
 
     /// Returns a new array with an element replaced with a given value.
-    let replace index value (arr: _ []) =
-        if index >= arr.Length then raise (IndexOutOfRangeException "index")
-        let res = Array.copy arr
+    let replace index value (array: _ []) =
+        checkNonNull "array" array
+        if index >= array.Length then raise (IndexOutOfRangeException "index")
+        let res = Array.copy array
         res.[index] <- value
         res
 
     /// Returns all heads of a given array.
     /// For [|1;2;3|] it returns [|[|1; 2; 3|]; [|1; 2|]; [|1|]|]
     let heads (array: 'T []) =
+        checkNonNull "array" array
         let res = Array.zeroCreate<'T[]> array.Length
         for i = array.Length - 1 downto 0 do
             res.[i] <- array.[0..i]
         res
 
     let foldi (folder : 'State -> int -> 'T -> 'State) (state : 'State) (array : 'T[]) =
+        checkNonNull "array" array
         let mutable state = state
         let len = array.Length
         for i = 0 to len - 1 do
             state <- folder state i array.[i]
         state
+
+    /// Get the first element of the array or None if the Array is empty
+    let tryHead array =        
+        match array with
+        | null | [||] -> None
+        | arr  -> Some arr.[0]    
+    
 
     open System.Collections.Generic
 
@@ -115,6 +167,28 @@ module Array =
                     result <- false
                 i <- i + 1
             result
+
+    /// pass an array byref to reverse it in place
+    let revInPlace (arr: 'a[] byref ) =
+        checkNonNull "array" arr
+        let arrlen, revlen = arr.Length-1, arr.Length/2 - 1
+        for idx in 0 .. revlen do
+            let t1 = arr.[idx] 
+            let t2 = arr.[arrlen-idx]
+            arr.[idx] <- t2
+            arr.[arrlen-idx] <- t1
+
+
+    /// Return an array of elements that preceded the first element that failed
+    /// to satisfy the predicate
+    let takeWhile predicate (array: 'T[]) = 
+        checkNonNull "array" array
+        if array.Length = 0 then Array.empty else
+        let mutable count = 0
+        while count < array.Length && predicate array.[count] do
+            count <- count + 1
+        Array.sub  array 0 count
+
 
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
@@ -424,26 +498,10 @@ module Pervasive =
     Debug.Listeners.Add(new TextWriterTraceListener(System.Console.Out)) |> ignore
     Debug.AutoFlush <- true
 #endif
-    /// obj.ReferenceEquals
-    let inline (==) a b = obj.ReferenceEquals(a, b)
-    /// LanguagePrimitives.PhysicalEquality
-    let inline (===) a b = LanguagePrimitives.PhysicalEquality a b
-    let inline debug msg = Printf.kprintf Debug.WriteLine msg
-    let inline fail msg = Printf.kprintf Debug.Fail msg
-    let inline isNull v = match v with | null -> true | _ -> false
-    let inline isNotNull v = v |> (not << isNull)
 
     let maybe = MaybeBuilder()
     let asyncMaybe = AsyncMaybeBuilder()
     
-    let tryCast<'T> (o: obj): 'T option = 
-        match o with
-        | null -> None
-        | :? 'T as a -> Some a
-        | _ -> 
-            debug "Cannot cast %O to %O" (o.GetType()) typeof<'T>.Name
-            None
-
     /// Load times used to reset type checking properly on script/project load/unload. It just has to be unique for each project load/reload.
     /// Not yet sure if this works for scripts.
     let fakeDateTimeRepresentingTimeLoaded x = DateTime(abs (int64 (match x with null -> 0 | _ -> x.GetHashCode())) % 103231L)
@@ -517,29 +575,34 @@ module String =
         match str with
         | null -> null
         | str ->
-            match str.ToCharArray() |> Array.toList with
-            | [] -> str
-            | h :: t when Char.IsUpper h -> String (Char.ToLower h :: t |> List.toArray)
+            match str.ToCharArray () with
+            | [||] -> str
+            | arr when Char.IsUpper arr.[0] -> 
+                arr.[0] <- Char.ToLower arr.[0]
+                String (arr)
             | _ -> str
 
     let extractTrailingIndex (str: string) =
         match str with
         | null -> null, None
         | _ ->
-            str 
-            |> Seq.toList 
-            |> List.rev 
-            |> Seq.takeWhile Char.IsDigit 
-            |> Seq.toArray 
-            |> Array.rev
-            |> fun chars -> String(chars)
+            let chars = 
+                let mutable charr = (str.ToCharArray ())
+                Array.revInPlace &charr; charr
+            let digits = 
+                let mutable darr = chars |> Array.takeWhile Char.IsDigit
+                Array.revInPlace &darr; darr
+            String digits
             |> function
                | "" -> str, None
                | index -> str.Substring (0, str.Length - index.Length), Some (int index)
 
-    let trim (value: string) = match value with null -> null | x -> x.Trim()
-    
-    let split options (separator: string[]) (value: string) = 
+    /// Remove all trailing and leading whitespace from the string
+    /// return null if the string is null
+    let inline trim (value: string) = match value with null -> null | x -> x.Trim()
+
+    /// Splits a string into substrings based on the strings in the array seperators
+    let inline split options (separator: string[]) (value: string) = 
         match value with null -> null | x -> x.Split(separator, options)
 
     let (|StartsWith|_|) pattern value =
@@ -572,7 +635,7 @@ module String =
         |]
 
     let getNonEmptyLines (str: string) =
-        use reader = new StringReader(str)
+        use reader = new StringReader (str)
         [|
         let line = ref (reader.ReadLine())
         while isNotNull (!line) do
@@ -580,6 +643,32 @@ module String =
                 yield !line
             line := reader.ReadLine()
         |]
+
+    open System.Text
+    /// Use an accumulation function to create a new string applying a transformation
+    /// to every non-empty line in the string
+    let mapNonEmptyLines (folder: StringBuilder -> string -> StringBuilder) (str: string) =
+        let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt folder
+        use reader = new StringReader (str)
+        let sb = StringBuilder ()
+        let mutable line = reader.ReadLine ()
+        while isNotNull line do
+            if line.Length > 0 then
+                f.Invoke (sb,line) |> ignore
+            line <- reader.ReadLine()
+        string sb
+
+    /// Parse a string to find the first nonempty line
+    /// Return null if the string was null or only contained empty lines
+    let firstNonEmptyLine (str: string) =
+        use reader = new StringReader (str)
+        let rec loop (line:string) =
+            if isNull line then None 
+            elif  line.Length > 0 then Some line
+            else loop (reader.ReadLine())
+        loop (reader.ReadLine())
+
+
 
 module Reflection =
     open System.Reflection
