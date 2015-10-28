@@ -93,7 +93,11 @@ type IOutliningOptions =
 [<AutoOpen>]
 module Utils =
     type System.IServiceProvider with
+        /// Use the service provider to get an MEF service via its Interface type
         member x.GetService<'T>() = x.GetService(typeof<'T>) :?> 'T
+        ///  Use the service provider to get an MEF Visual Studio service
+        ///  and cast it to its Interface type e.g.
+        ///  `.GetService<IVsTextManager, SVsTextManager>()`
         member x.GetService<'T, 'S>() = x.GetService(typeof<'S>) :?> 'T
 
 [<RequireQualifiedAccess>]

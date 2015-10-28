@@ -147,7 +147,6 @@ module Array =
             if hashSet.Add(v) then
                 temp.[i] <- v
                 i <- i + 1
-
         Array.sub temp 0 i 
 
     /// Optimized arrays equality. ~100x faster than `array1 = array2`.
@@ -229,6 +228,13 @@ module Option =
         function
         | Some x -> Some x
         | None -> f()
+
+    /// Gets the option if Some x, otherwise the supplied default value.
+    let inline mapOrElse mapfn alt opt =
+        match opt with
+        | Some v -> mapfn v
+        | None -> alt
+
 
     /// Some(Some x) -> Some x | None -> None
     let inline flatten x =
@@ -360,7 +366,7 @@ type MaybeBuilder () =
     // unit -> M<'T>
     [<DebuggerStepThrough>]
     member inline __.Zero (): unit option =
-        Some ()     // TODO: Should this be None?
+        None    // TODO: Should this be None?
 
     // (unit -> M<'T>) -> M<'T>
     [<DebuggerStepThrough>]
@@ -373,10 +379,8 @@ type MaybeBuilder () =
     [<DebuggerStepThrough>]
     member inline __.Combine (r1, r2: 'T option): 'T option =
         match r1 with
-        | None ->
-            None
-        | Some () ->
-            r2
+        | None -> None
+        | Some () -> r2
 
     // M<'T> * ('T -> M<'U>) -> M<'U>
     [<DebuggerStepThrough>]
@@ -668,7 +672,20 @@ module String =
             else loop (reader.ReadLine())
         loop (reader.ReadLine())
 
+open System.Text
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module StringBuilder =
+    /// Pipelining function for appending a string to a stringbuilder
+    let inline append   (str:string) (sb:StringBuilder) = sb.Append str
 
+    /// Pipelining function for appending a string with a '\n' to a stringbuilder
+    let inline appendln (str:string) (sb:StringBuilder) = sb.AppendLine str
+    
+    /// SideEffecting function for appending a string to a stringbuilder
+    let appendi (str:string) (sb:StringBuilder) = sb.Append str |> ignore
+
+    /// SideEffecting function for appending a string with a '\n' to a stringbuilder
+    let appendlni (str:string) (sb:StringBuilder) = sb.AppendLine str |> ignore
 
 module Reflection =
     open System.Reflection

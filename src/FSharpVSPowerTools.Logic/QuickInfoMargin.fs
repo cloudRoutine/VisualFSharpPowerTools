@@ -8,6 +8,7 @@ open Microsoft.VisualStudio.Shell.Interop
 open FSharpVSPowerTools
 open FSharpVSPowerTools.ProjectSystem
 open FSharpVSPowerTools.AsyncMaybe
+open FSharpVSPowerTools.StringBuilder
 open FSharp.ViewModule
 open Microsoft.FSharp.Compiler
 open Microsoft.FSharp.Compiler.SourceCodeServices
@@ -52,9 +53,9 @@ type QuickInfoMargin (textDocument: ITextDocument,
             // errors accumulating lines annotated with their index number   
             let errorString (errors:string list) (sb:StringBuilder) =
                 match errors with 
-                | [e] -> sb.Append e
+                | [e] -> append e sb
                 | _ -> (sb, errors ) ||> List.foldi (fun sb i e -> 
-                    sb.Append(sprintf "%d. %s" (i + 1) e).Append(" "))
+                    sb |> append (sprintf "%d. %s" (i + 1) e) |> append " ")
                        
             let currentInfo =
                 // if the tooltip contains errors show them
@@ -65,17 +66,16 @@ type QuickInfoMargin (textDocument: ITextDocument,
                             match errorls with
                             | [_] -> sprintf "%s" <| string severity
                             | _ -> sprintf "%s (%d)" (string severity) errorls.Length
-                        (sb.Append(title).Append (": ") |> errorString errorls).Append (" ")) |> string)  
+                        (sb |> append title |> append ": " |> errorString errorls |> append " ")) |> string)  
                 // show type info if there aren't any errors
-                |> Option.orElse (tooltip |> Option.bind (fun tooltip ->
+                |>  Option.orElse (tooltip |> Option.bind (fun tooltip ->
                     tooltip  |> String.firstNonEmptyLine |> Option.map (fun str ->
-                        if str.StartsWith ("type ", StringComparison.Ordinal) then
-                            let index = str.LastIndexOf ("=", StringComparison.Ordinal)
-                            if index > 0 then str.[0..index-1] else str
-                        else str)))
+                    if str.StartsWith ("type ", StringComparison.Ordinal) then
+                        let index = str.LastIndexOf ("=", StringComparison.Ordinal)
+                        if index > 0 then str.[0..index-1] else str
+                    else str)))
                 // if there are no results the panel will be empty
                 |> Option.getOrElse ""
-
             model.QuickInfo <- currentInfo
         lock updateLock updateFunc      
         
@@ -114,12 +114,10 @@ type QuickInfoMargin (textDocument: ITextDocument,
                                 longIdent.Line + 1, longIdent.RightColumn, lineStr, idents, project, 
                                 textDocument.FilePath, newWord.Snapshot.GetText())
                         return!
-                            tooltip
-                            |> List.tryHead
-                            |> Option.bind (function
-                                | FSharpToolTipElement.Single (s, _) -> Some s
-                                | FSharpToolTipElement.Group ((s, _) :: _) -> Some s
-                                | _ -> None)
+                            match List.tryHead tooltip with 
+                            | Some (FSharpToolTipElement.Single (s, _)) -> Some s
+                            | Some (FSharpToolTipElement.Group ((s, _) :: _)) -> Some s
+                            | _ -> None
                     } |> Async.map Some
                 let! checkResults = 
                     vsLanguageService.ParseAndCheckFileInProject(textDocument.FilePath, buffer.CurrentSnapshot.GetText(), project) |> liftAsync
@@ -158,4 +156,4 @@ type QuickInfoMargin (textDocument: ITextDocument,
             | _ -> Unchecked.defaultof<_>
 
     interface IDisposable with
-        member __.Dispose() = (docEventListener :> IDisposable).Dispose()
+        member __.Dispose() = (docEventListener :> IDisposable).Dispose ()

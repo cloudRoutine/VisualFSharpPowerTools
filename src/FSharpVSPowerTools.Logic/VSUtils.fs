@@ -21,6 +21,10 @@ type String with
         if   index < 0 then self elif index > self.Length then "" else self.Substring index
 
 
+//========================
+// BUFFERS AND SNAPSHOTS
+//========================
+
 open System.Diagnostics
 open Microsoft.VisualStudio.Text
 open Microsoft.VisualStudio.Text.Editor
@@ -182,6 +186,10 @@ type ITextView with
           let! line, col = x.GetCaretPosition()
           return Microsoft.FSharp.Compiler.Range.mkPos (line+1) (col+1)
         }
+
+//====================
+// LANGUAGE SERVICES 
+//====================
 
 open System.Runtime.InteropServices
 open Microsoft.VisualStudio
@@ -367,6 +375,13 @@ let showDialog (wnd: Window) (shell: IVsUIShell) =
     | _ -> 
         None    
 
+
+
+//============
+// THREADING
+//============
+
+
 open System.Threading
 open System.Windows.Threading
 open System.Windows.Input
@@ -450,6 +465,11 @@ let time label f =
     debug "%s took: %i ms" label sw.ElapsedMilliseconds
     result
 
+//=============================
+// VISUAL STUDIO MEF SERVICES
+//=============================
+
+
 type IServiceProvider with
     /// Go to exact location in a given file.
     member serviceProvider.NavigateTo (fileName, startRow, startCol, endRow, endCol) =
@@ -493,8 +513,8 @@ type IServiceProvider with
 
     /// Get the IWPFTextView of a document if it is open
     member serviceProvider.GetWPFTextViewOfDocument fileName =
-        let mutable hierarchy = Unchecked.defaultof<_>
-        let mutable itemId = Unchecked.defaultof<_>
+        let mutable hierarchy   = Unchecked.defaultof<_>
+        let mutable itemId      = Unchecked.defaultof<_>
         let mutable windowFrame = Unchecked.defaultof<_>
         if VsShellUtilities.IsDocumentOpen
                (serviceProvider, fileName, Constants.guidLogicalTextView, &hierarchy, &itemId, &windowFrame) then
@@ -504,6 +524,48 @@ type IServiceProvider with
             Some (vsEditorAdapterFactoryService.GetWpfTextView vsTextView)
         else None      
         
+
+    member serviceProvider.GetDocumentFromBuffer (textBuffer:ITextBuffer) =
+        maybe{
+            let documentService = serviceProvider.GetService<ITextDocumentFactoryService>()
+            let mutable doc = Unchecked.defaultof<ITextDocument>
+            return! 
+                match documentService.TryGetTextDocument ( textBuffer, &doc) with
+                | false -> None
+                | true -> Some doc
+        }
+
+
+    member serviceProvider.GetViewAndDocumentFromBuffer (textBuffer:ITextBuffer) =
+        maybe{
+            let! doc = serviceProvider.GetDocumentFromBuffer textBuffer
+            let! view = serviceProvider.GetWPFTextViewOfDocument doc.FilePath
+            return view, doc
+        }
+
+
+    member serviceProvider.GetActiveViewAndDocument () =
+        maybe {
+            let documentService     = serviceProvider.GetService<ITextDocumentFactoryService>()
+            let dte                 = serviceProvider.GetService<EnvDTE.DTE, SDTE> ()
+            let! doc = dte.GetActiveDocument ()
+            let! wpfview =
+                let mutable hierarchy   = Unchecked.defaultof<_>
+                let mutable itemId      = Unchecked.defaultof<_>
+                let mutable windowFrame = Unchecked.defaultof<_>
+                if VsShellUtilities.IsDocumentOpen
+                   (serviceProvider, doc.FullName, Constants.guidLogicalTextView, &hierarchy, &itemId, &windowFrame) then
+                    let vsTextView      = VsShellUtilities.GetTextView windowFrame 
+                    let componentModel  = serviceProvider.GetService<IComponentModel, SComponentModel>()
+                    let vsEditorAdapterFactoryService =  componentModel.GetService<IVsEditorAdaptersFactoryService>()            
+                    Some (vsEditorAdapterFactoryService.GetWpfTextView vsTextView)
+                else None            
+            let! doc = 
+                let mutable doc = Unchecked.defaultof<ITextDocument>
+                if documentService.TryGetTextDocument (wpfview.TextBuffer, &doc) then Some doc else None
+            return wpfview, doc
+        }
+
            
 
 
@@ -528,3 +590,9 @@ let listFSharpProjectsInSolution (dte: DTE) =
 
     [ for p in dte.Solution.Projects do
         yield! handleProject p ]
+
+//===============
+// OLE COMMANDS
+//===============
+
+let inline nativeintToChar nint = Marshal.GetObjectForNativeVariant nint :?> uint16 |> char
