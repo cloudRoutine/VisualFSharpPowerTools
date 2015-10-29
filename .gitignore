@@ -194,3 +194,4 @@ gallerycredentials.txt
 .fake
 
 *.FSharpLint
+.vs/config/applicationhost.config
