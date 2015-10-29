@@ -137,6 +137,7 @@
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Commands\OutliningTaggerProvider.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FsXaml.Wpf, Version=0.9.9.0, Culture=neutral, processorArchitecture=MSIL">
