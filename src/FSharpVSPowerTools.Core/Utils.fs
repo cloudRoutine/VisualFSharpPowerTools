@@ -190,28 +190,6 @@ module Array =
         array.[0..count]
 
 
-    /// pass an array byref to reverse it in place
-    let revInPlace (arr: 'a[] byref ) =
-        checkNonNull "array" arr
-        let arrlen, revlen = arr.Length-1, arr.Length/2 - 1
-        for idx in 0 .. revlen do
-            let t1 = arr.[idx]
-            let t2 = arr.[arrlen-idx]
-            arr.[idx] <- t2
-            arr.[arrlen-idx] <- t1
-
-
-    /// Return an array of elements that preceded the first element that failed
-    /// to satisfy the predicate
-    let takeWhile predicate (array: 'T[]) =
-        checkNonNull "array" array
-        if array.Length = 0 then Array.empty else
-        let mutable count = 0
-        while count < array.Length && predicate array.[count] do
-            count <- count + 1
-        Array.sub  array 0 count
-
-
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Option =
@@ -390,6 +368,9 @@ module Async =
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module String =
+
+    let inline toCharArray (str:string) = str.ToCharArray ()
+
     let lowerCaseFirstChar (str: string) =
         match str with
         | null -> null
@@ -872,31 +853,15 @@ module Pervasive =
     /// Path.Combine
     let (</>) path1 path2 = Path.Combine (path1, path2)
 
-[<RequireQualifiedAccess>]
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module String =
-
-    let inline toCharArray (str:string) = str.ToCharArray()
-
-    let lowerCaseFirstChar (str: string) =
-        if isNull str then null else
-        let strArr = toCharArray str
-        match Array.tryHead strArr with
-        | None -> str
-        | Some c when Char.IsUpper c ->
-            strArr.[0] <- Char.ToLower c
-            String (strArr)
-        | Some _ -> str
-
     type IDictionary<'k,'v> with //'key,'value when 'key:equality> with
 
-    /// Remove all trailing and leading whitespace from the string
-    /// return null if the string is null
-    let trim (value: string) = if isNull value then null else value.Trim()
-
-    /// Splits a string into substrings based on the strings in the array seperators
-    let split options (separator: string[]) (value: string) =
-        if isNull value  then null else value.Split(separator, options)
+        [<CustomOperation "add">]
+        ///<summary>    Add the key and value to the dictionary if not already present
+        ///<para/>      overwrite the value for the key if the key is present 
+        ///</summary>
+        member self.AddOp (_,(key,value)) =
+            if self.ContainsKey key then self.[key] <- value
+            else self.Add (key,value)
 
         [<CustomOperation "tryAdd">]
         ///<summary>    Add the key and value to the dictionary if not already present
@@ -906,75 +871,12 @@ module String =
             if self.ContainsKey key then () else
             self.Add (key,value)
 
-    let getLines (str: string) =
-        use reader = new StringReader(str)
-        [|
-        let line = ref (reader.ReadLine())
-        while isNotNull (!line) do
-            yield !line
-            line := reader.ReadLine()
-        if str.EndsWith("\n") then
-            // last trailing space not returned
-            // http://stackoverflow.com/questions/19365404/stringreader-omits-trailing-linebreak
-            yield String.Empty
-        |]
+        member __.Yield (_) = ()
+        member __.Zero () = ()
 
-    let getNonEmptyLines (str: string) =
-        use reader = new StringReader(str)
-        [|
-        let line = ref (reader.ReadLine())
-        while isNotNull (!line) do
-            if (!line).Length > 0 then
-                yield !line
-            line := reader.ReadLine()
-        |]
-
-    open System.Text
-    /// Use an accumulation function to create a new string applying a transformation
-    /// to every non-empty line in the string
-    let mapNonEmptyLines (folder: StringBuilder -> string -> StringBuilder) (str: string) =
-        let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt folder
-        use reader = new StringReader (str)
-        let sb = StringBuilder ()
-        let mutable line = reader.ReadLine ()
-        while isNotNull line do
-            if line.Length > 0 then
-                f.Invoke (sb,line) |> ignore
-            line <- reader.ReadLine()
-        string sb
-
-    /// Parse a string to find the first nonempty line
-    /// Return null if the string was null or only contained empty lines
-    let firstNonEmptyLine (str: string) =
-        use reader = new StringReader (str)
-        let rec loop (line:string) =
-            if isNull line then None
-            elif  line.Length > 0 then Some line
-            else loop (reader.ReadLine())
-        loop (reader.ReadLine())
-
-open System.Text
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module StringBuilder =
-    /// Pipelining function for appending a string to a stringbuilder
-    let inline append   (str:string) (sb:StringBuilder) = sb.Append str
-
-    /// Pipelining function for appending a string with a '\n' to a stringbuilder
-    let inline appendln (str:string) (sb:StringBuilder) = sb.AppendLine str
-
-    /// SideEffecting function for appending a string to a stringbuilder
-    let inline appendi (str:string) (sb:StringBuilder) = sb.Append str |> ignore
-
-    /// SideEffecting function for appending a string with a '\n' to a stringbuilder
-    let inline appendlni (str:string) (sb:StringBuilder) = sb.AppendLine str |> ignore
-
-module Reflection =
-    open System.Reflection
-
-
-    let inline dispose (disposable:#IDisposable) = disposable.Dispose()
 
     type System.Collections.Generic.List<'a> with
-
-        member inline x.Iter action =
+    
+        member inline x.Iter action =            
             for idx in 0..x.Count-1 do action x.[idx]
+

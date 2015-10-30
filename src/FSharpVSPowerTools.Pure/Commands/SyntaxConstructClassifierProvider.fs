@@ -36,37 +36,37 @@ module ClassificationTypes =
     let [<Literal>] FSharpEscaped       = Constants.fsharpEscaped       
     let [<Literal>] FSharpOperator      = Constants.fsharpOperator      
 
-    [<Export>][<Name (FSharpReferenceType)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpReferenceType)>][<BaseDefinition "identifier">]
     let internal FSharpReferenceClassificationType = ClassificationTypeDefinition () 
 
-    [<Export>][<Name (FSharpValueType)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpValueType)>][<BaseDefinition "identifier">]
     let internal FSharpValueClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpPatternCase)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpPatternCase)>][<BaseDefinition "identifier">]
     let internal FSharpPatternCaseClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpFunction)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpFunction)>][<BaseDefinition "identifier">]
     let internal FSharpFunctionClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpMutableVar)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpMutableVar)>][<BaseDefinition "identifier">]
     let internal FSharpMutableletClassificationType = ClassificationTypeDefinition ()
         
-    [<Export>][<Name (FSharpQuotation)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpQuotation)>][<BaseDefinition "identifier">]
     let internal FSharpQuotationClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpModule)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpModule)>][<BaseDefinition "identifier">]
     let internal FSharpModuleClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpUnused)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpUnused)>][<BaseDefinition "identifier">]
     let internal FSharpUnusedClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpPrintf)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpPrintf)>][<BaseDefinition "identifier">]
     let internal FSharpPrintfClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpEscaped)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpEscaped)>][<BaseDefinition "identifier">]
     let internal FSharpEscapedClassificationType = ClassificationTypeDefinition ()
 
-    [<Export>][<Name (FSharpOperator)>][<BaseDefinition("identifier")>]
+    [<Export>][<Name (FSharpOperator)>][<BaseDefinition "identifier">]
     let internal FSharpOperatorClassificationType = ClassificationTypeDefinition ()
 
 
@@ -93,7 +93,7 @@ type ClassificationColorManager [<ImportingConstructor>]
 
     let lightAndBlueColors = Dictionary<string, FontColor>() :> IDictionary<_,_> 
 
-    do  lightAndBlueColors  {
+    do  lightAndBlueColors {
             add ( ClassificationTypes.FSharpReferenceType, FontColor(Color.FromRgb((43uy, 145uy, 175uy))))
             add ( ClassificationTypes.FSharpReferenceType, FontColor(Color.FromRgb(43uy, 145uy, 175uy))) 
             add ( ClassificationTypes.FSharpValueType,     FontColor(Color.FromRgb(43uy, 145uy, 175uy))) 
@@ -110,7 +110,7 @@ type ClassificationColorManager [<ImportingConstructor>]
     // Dark theme colors
     let darkColors = Dictionary<string, FontColor>():> IDictionary<_,_>
     
-    do darkColors{ 
+    do darkColors { 
         add (ClassificationTypes.FSharpReferenceType, FontColor(Color.FromRgb(78uy, 201uy, 176uy))) 
         add (ClassificationTypes.FSharpValueType    , FontColor(Color.FromRgb(78uy, 201uy, 176uy))) 
         add (ClassificationTypes.FSharpPatternCase  , FontColor(Color.FromRgb(220uy, 220uy, 220uy)))
