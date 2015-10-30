@@ -23,7 +23,7 @@ module private Extensions =
 
 type QuickInfoVisual = FsXaml.XAML<"QuickInfoMargin.xaml", ExposeNamedProperties=true>
 
-type QuickInfoViewModel() as self = 
+type QuickInfoViewModel() as self =
     inherit ViewModelBase()
     let quickInfo = self.Factory.Backing(<@@ self.QuickInfo @@>, "")
     member __.QuickInfo
@@ -31,10 +31,10 @@ type QuickInfoViewModel() as self =
         and set v = quickInfo.Value <- v
 
 type QuickInfoMargin (textDocument: ITextDocument,
-                      view: ITextView, 
-                      vsLanguageService: VSLanguageService, 
+                      view: ITextView,
+                      vsLanguageService: VSLanguageService,
                       serviceProvider: IServiceProvider,
-                      projectFactory: ProjectFactory) = 
+                      projectFactory: ProjectFactory) =
 
     let updateLock = obj()
     let model = QuickInfoViewModel()
@@ -44,53 +44,57 @@ type QuickInfoMargin (textDocument: ITextDocument,
        visual.tbQuickInfo.MouseDoubleClick.Add (fun _ ->
            System.Windows.Clipboard.SetText visual.tbQuickInfo.Text
            visual.tbQuickInfo.SelectAll())
-    
+
     let buffer = view.TextBuffer
 
     let updateQuickInfo (tooltip: string option, errors: ((FSharpErrorSeverity * string list) []) option) =
-        let updateFunc () =    
-            // helper function to lead a string builder across the collection of 
-            // errors accumulating lines annotated with their index number   
+        let updateFunc () =
+            // helper function to lead a string builder across the collection of
+            // errors accumulating lines annotated with their index number
             let errorString (errors:string list) (sb:StringBuilder) =
-                match errors with 
+                match errors with
                 | [e] -> append e sb
-                | _ -> (sb, errors ) ||> List.foldi (fun sb i e -> 
+                | _ -> (sb, errors ) ||> List.foldi (fun sb i e ->
                     sb |> append (sprintf "%d. %s" (i + 1) e) |> append " ")
-                       
+
             let currentInfo =
-                // if the tooltip contains errors show them
-                errors |> Option.map (fun errors ->
-                    (StringBuilder (), errors) ||> Array.fold (fun sb (severity, err) -> 
+                match errors, tooltip with
+                | Some es, _ -> // if the tooltip contains errors show them
+                    let sb = StringBuilder ()
+                    for (severity, err) in es do
                         let errorls = List.map String.trim err
-                        let title = 
+                        let title =
                             match errorls with
                             | [_] -> sprintf "%s" <| string severity
                             | _ -> sprintf "%s (%d)" (string severity) errorls.Length
-                        (sb |> append title |> append ": " |> errorString errorls |> append " ")) |> string)  
-                // show type info if there aren't any errors
-                |>  Option.orElse (tooltip |> Option.bind (fun tooltip ->
-                    tooltip  |> String.firstNonEmptyLine |> Option.map (fun str ->
-                    if str.StartsWith ("type ", StringComparison.Ordinal) then
-                        let index = str.LastIndexOf ("=", StringComparison.Ordinal)
-                        if index > 0 then str.[0..index-1] else str
-                    else str)))
-                // if there are no results the panel will be empty
-                |> Option.getOrElse ""
+                        sb |> append title |> append ": " |> errorString errorls |> appendi " "
+                    string sb
+                | None, Some tt ->   // show type info if there aren't any errors
+                    match  String.firstNonEmptyLine tt with
+                    | Some str ->
+                        if str.StartsWith ("type ", StringComparison.Ordinal) then
+                            let index = str.LastIndexOf ("=", StringComparison.Ordinal)
+                            if index > 0 then str.[0..index-1] else str
+                        else str
+                    | None -> ""
+                | None, None -> ""  // if there are no results the panel will be empty
             model.QuickInfo <- currentInfo
-        lock updateLock updateFunc      
-        
+        lock updateLock updateFunc
+
     // helper function in the form required by mapNonEmptyLines
     let flattener (sb:StringBuilder) (str:string) : StringBuilder =
-            if str.Length > 0 && Char.IsUpper str.[0] then (sb.Append ". ").Append (String.trim str) 
+            if str.Length > 0 && Char.IsUpper str.[0] then (sb.Append ". ").Append (String.trim str)
             else (sb.Append " ").Append (String.trim str)
-                
 
-    let flattenLines (x: string) : string =
-        let appendDot (x:string) = 
-            if x.Length > 0 && x.[x.Length - 1] <> '.' then x + "." else x
-        match x with
-        | null -> ""
-        | x -> x |> String.mapNonEmptyLines flattener |> appendDot
+
+    let flattenLines (str:string) : string =
+        if isNull str then "" else
+        let flatstr = String.mapNonEmptyLines flattener str
+        match flatstr |> String.toCharArray |> Array.tryLast with
+        | None  -> ""
+        | Some '.' -> flatstr
+        | Some _ -> flatstr + "."
+
 
     let updateAtCaretPosition () =
         let caretPos = view.Caret.Position
@@ -111,15 +115,15 @@ type QuickInfoMargin (textDocument: ITextDocument,
                         let idents = String.split StringSplitOptions.None [|"."|] longIdent.Text |> Array.toList
                         let! (FSharpToolTipText tooltip) =
                             vsLanguageService.GetOpenDeclarationTooltip(
-                                longIdent.Line + 1, longIdent.RightColumn, lineStr, idents, project, 
+                                longIdent.Line + 1, longIdent.RightColumn, lineStr, idents, project,
                                 textDocument.FilePath, newWord.Snapshot.GetText())
                         return!
-                            match List.tryHead tooltip with 
+                            match List.tryHead tooltip with
                             | Some (FSharpToolTipElement.Single (s, _)) -> Some s
                             | Some (FSharpToolTipElement.Group ((s, _) :: _)) -> Some s
                             | _ -> None
                     } |> Async.map Some
-                let! checkResults = 
+                let! checkResults =
                     vsLanguageService.ParseAndCheckFileInProject(textDocument.FilePath, buffer.CurrentSnapshot.GetText(), project) |> liftAsync
                 let! errors =
                     asyncMaybe {
@@ -138,7 +142,7 @@ type QuickInfoMargin (textDocument: ITextDocument,
                             |> function [||] -> None | es -> Some es
                     } |> Async.map Some
                 return tooltip, errors
-            } 
+            }
             |> Async.map (Option.getOrElse (None, None) >> updateQuickInfo)
             |> Async.StartInThreadPoolSafe
         | None -> updateQuickInfo (None, None)
@@ -149,7 +153,7 @@ type QuickInfoMargin (textDocument: ITextDocument,
         member __.VisualElement = upcast visual
         member __.MarginSize = visual.ActualHeight + 2.
         member __.Enabled = true
-        
+
         member x.GetTextViewMargin name =
             match name with
             | Constants.QuickInfoMargin -> upcast x
