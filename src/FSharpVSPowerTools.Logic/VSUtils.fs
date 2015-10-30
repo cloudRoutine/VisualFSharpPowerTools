@@ -37,10 +37,10 @@ let fromRange (snapshot: ITextSnapshot) (startLine, startColumn, endLine, endCol
                  sprintf "Single-line pos, but startCol = %d, endCol = %d" startColumn endColumn)
     try 
         let startPos = snapshot.GetLineFromLineNumber(startLine - 1).Start.Position + startColumn
-        let endPos = snapshot.GetLineFromLineNumber(endLine - 1).Start.Position + endColumn
+        let endPos   = snapshot.GetLineFromLineNumber(endLine - 1).Start.Position + endColumn
         Debug.Assert(startPos <= endPos, sprintf "startPos = %d, endPos = %d" startPos endPos)
         let length = endPos - startPos
-        Some (SnapshotSpan(snapshot, startPos, length))
+        Some (SnapshotSpan (snapshot, startPos, length))
     with e ->
         fail "Attempting to create a SnapshotSpan (StartLine = %d, StartColumn = %d, EndLine = %d, EndColumn = %d) in a snapshot length = %d results in: %O"
              startLine startColumn endLine endColumn snapshot.Length e
@@ -415,7 +415,7 @@ type Async with
         Async.StartImmediate(comp, ?cancellationToken = cancellationToken)
 
     /// An equivalence of Async.Start which catches and logs raised exceptions
-    static member StartInThreadPoolSafe(computation, ?cancellationToken) =
+    static member StartInThreadPoolSafe (computation, ?cancellationToken) =
         let comp =
             async {
                 try
@@ -424,7 +424,7 @@ type Async with
                     fail "The following exception occurs inside async blocks: %O" e
                     Logging.logException e
             }
-        Async.Start(comp, ?cancellationToken = cancellationToken)       
+        Async.Start (comp, ?cancellationToken = cancellationToken)       
 
 /// Provides an IDisposable handle which allows us to override the cursor cleanly as well as restore whenever needed
 type CursorOverrideHandle(newCursor) =
@@ -460,7 +460,7 @@ let protect f = protectOrDefault f ()
 /// Execute a function and record execution time
 let time label f =
     let sw = Stopwatch.StartNew()
-    let result = f()
+    let result = f ()
     sw.Stop()
     debug "%s took: %i ms" label sw.ElapsedMilliseconds
     result
@@ -469,6 +469,19 @@ let time label f =
 // VISUAL STUDIO MEF SERVICES
 //=============================
 
+type ITextDocumentFactoryService with
+
+    member docService.TryDocumentFromBuffer (textBuffer:ITextBuffer) =
+        let mutable doc = Unchecked.defaultof<ITextDocument>
+        match docService.TryGetTextDocument (textBuffer,&doc) with
+        | true -> Some doc
+        | false -> None
+
+
+type IVsEditorAdaptersFactoryService with
+
+    member inline adapter.TryGetViewAdapter wpfTextView =
+        adapter.GetViewAdapter wpfTextView |> Option.ofNull
 
 type IServiceProvider with
     /// Go to exact location in a given file.
@@ -527,7 +540,7 @@ type IServiceProvider with
 
     member serviceProvider.GetDocumentFromBuffer (textBuffer:ITextBuffer) =
         maybe{
-            let documentService = serviceProvider.GetService<ITextDocumentFactoryService>()
+            let! documentService = serviceProvider.TryGetService<ITextDocumentFactoryService>()
             let mutable doc = Unchecked.defaultof<ITextDocument>
             return! 
                 match documentService.TryGetTextDocument ( textBuffer, &doc) with
@@ -566,7 +579,26 @@ type IServiceProvider with
             return wpfview, doc
         }
 
-           
+open System.ComponentModel.Design
+
+
+type IServiceContainer with
+    
+    member self.AddService<'a> (callback:ServiceCreatorCallback) =
+        self.AddService (typeof<'a>, callback)
+
+    member self.AddService<'a> (serviceInstance:obj) =
+        self.AddService (typeof<'a>,serviceInstance)
+
+    member self.AddService<'a> (callback:ServiceCreatorCallback,promote:bool) =
+        self.AddService (typeof<'a>, callback, promote)
+
+    member self.AddService<'a> (serviceInstance:obj,promote:bool) =
+        self.AddService (typeof<'a>,serviceInstance,promote)
+
+
+
+
 
 
 let isSourceExtension ext =
@@ -590,6 +622,21 @@ let listFSharpProjectsInSolution (dte: DTE) =
 
     [ for p in dte.Solution.Projects do
         yield! handleProject p ]
+
+
+let inline  asEnum<'T   when 'T : (new : unit -> 'T)
+                        and  'T : struct
+                        and  'T :> ValueType
+                        and  'T : enum<int>> target = 
+    Enum.Parse( typedefof<'T>, string target ) :?> 'T
+
+
+let inline tryAsEnum target :'a option when 'a:enum<'b> = 
+    match System.Enum.TryParse target with
+    | true, v -> Some v
+    | _ -> None
+
+
 
 //===============
 // OLE COMMANDS
