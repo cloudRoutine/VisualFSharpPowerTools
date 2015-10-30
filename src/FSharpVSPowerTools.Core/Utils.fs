@@ -82,7 +82,9 @@ module Array =
             elif index > whole.Length - 1 then false
             elif prefix.[index] = whole.[index] then loop (index + 1)
             else false
-        prefix.Length = 0 || loop 0
+        if prefix.Length = 0 then true
+        elif prefix.Length > whole.Length then false
+        else loop 0
 
     /// Returns true if one array has trailing elements equal to another's.
     let endsWith (suffix: _ []) (whole: _ []) =
@@ -192,9 +194,15 @@ module Array =
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Option =
+    ///<summary>
+    /// Check if value is null, if so return None. Otherwise return Some value
+    ///</summary>
     let inline ofNull value =
         if obj.ReferenceEquals(value, null) then None else Some value
 
+    ///<summary>
+    /// If the Nullable has a value return it wrappen in a <code>Some</code>, otherwise <code>None</code>
+    ///</summary>
     let inline ofNullable (value: Nullable<'T>) =
         if value.HasValue then Some value.Value else None
 
@@ -202,6 +210,16 @@ module Option =
         match value with
         | Some x -> Nullable<_> x
         | None -> Nullable<_> ()
+
+    ///<summary>
+    /// Unwrap an option into its value or None -> null
+    ///</summary>
+    // unfortunately this is useful for working with parts of the VSSDK
+    let inline toNull (option:'a option when 'a:null) =
+        match option with
+        | None -> null
+        | Some value -> value
+
 
     let inline attempt (f: unit -> 'T) = try Some <| f() with _ -> None
 
@@ -348,6 +366,192 @@ module Async =
             mapImpl (mapping, [], list)
 
 
+[<RequireQualifiedAccess>]
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module String =
+    let lowerCaseFirstChar (str: string) =
+        match str with
+        | null -> null
+        | str ->
+            match str.ToCharArray () with
+            | [||] -> str
+            | arr when Char.IsUpper arr.[0] -> 
+                arr.[0] <- Char.ToLower arr.[0]
+                String (arr)
+            | _ -> str
+
+    let extractTrailingIndex (str: string) =
+        match str with
+        | null -> null, None
+        | _ ->
+            let chars = 
+                let mutable charr = (str.ToCharArray ())
+                Array.revInPlace &charr; charr
+            let digits = 
+                let mutable darr = chars |> Array.takeWhile Char.IsDigit
+                Array.revInPlace &darr; darr
+            String digits
+            |> function
+               | "" -> str, None
+               | index -> str.Substring (0, str.Length - index.Length), Some (int index)
+
+    /// Remove all trailing and leading whitespace from the string
+    /// return null if the string is null
+    let inline trim (value: string) = match value with null -> null | x -> x.Trim()
+
+    /// Splits a string into substrings based on the strings in the array seperators
+    let inline split options (separator: string[]) (value: string) = 
+        match value with null -> null | x -> x.Split(separator, options)
+
+    let (|StartsWith|_|) pattern value =
+        if String.IsNullOrWhiteSpace(value) then
+            None
+        elif value.StartsWith(pattern) then
+            Some value
+        else None
+
+    let (|Contains|_|) pattern value =
+        if String.IsNullOrWhiteSpace(value) then
+            None
+        elif value.Contains(pattern) then
+            Some value
+        else None
+    
+    open System.IO
+
+    let getLines (str: string) =
+        use reader = new StringReader(str)
+        [|
+        let line = ref (reader.ReadLine())
+        while isNotNull (!line) do
+            yield !line
+            line := reader.ReadLine()
+        if str.EndsWith("\n") then
+            // last trailing space not returned
+            // http://stackoverflow.com/questions/19365404/stringreader-omits-trailing-linebreak
+            yield String.Empty
+        |]
+
+    let getNonEmptyLines (str: string) =
+        use reader = new StringReader (str)
+        [|
+        let line = ref (reader.ReadLine())
+        while isNotNull (!line) do
+            if (!line).Length > 0 then
+                yield !line
+            line := reader.ReadLine()
+        |]
+
+    open System.Text
+    /// Use an accumulation function to create a new string applying a transformation
+    /// to every non-empty line in the string
+    let mapNonEmptyLines (folder: StringBuilder -> string -> StringBuilder) (str: string) =
+        let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt folder
+        use reader = new StringReader (str)
+        let sb = StringBuilder ()
+        let mutable line = reader.ReadLine ()
+        while isNotNull line do
+            if line.Length > 0 then
+                f.Invoke (sb,line) |> ignore
+            line <- reader.ReadLine()
+        string sb
+
+    /// Parse a string to find the first nonempty line
+    /// Return null if the string was null or only contained empty lines
+    let firstNonEmptyLine (str: string) =
+        use reader = new StringReader (str)
+        let rec loop (line:string) =
+            if isNull line then None 
+            elif  line.Length > 0 then Some line
+            else loop (reader.ReadLine())
+        loop (reader.ReadLine())
+
+open System.Text
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module StringBuilder =
+    /// Pipelining function for appending a string to a stringbuilder
+    let inline append   (str:string) (sb:StringBuilder) = sb.Append str
+
+    /// Pipelining function for appending a string with a '\n' to a stringbuilder
+    let inline appendln (str:string) (sb:StringBuilder) = sb.AppendLine str
+    
+    /// SideEffecting function for appending a string to a stringbuilder
+    let appendi (str:string) (sb:StringBuilder) = sb.Append str |> ignore
+
+    /// SideEffecting function for appending a string with a '\n' to a stringbuilder
+    let appendlni (str:string) (sb:StringBuilder) = sb.AppendLine str |> ignore
+
+module Reflection =
+    open System.Reflection
+
+    type private Expr = System.Linq.Expressions.Expression
+    let instanceNonPublic = BindingFlags.Instance ||| BindingFlags.NonPublic
+    
+    let precompileFieldGet<'R>(f : FieldInfo) =
+        let p = Expr.Parameter(typeof<obj>)
+        let lambda = Expr.Lambda<Func<obj, 'R>>(Expr.Field(Expr.Convert(p, f.DeclaringType) :> Expr, f) :> Expr, p)
+        lambda.Compile().Invoke
+
+open System.Text
+open System.Diagnostics
+
+type Profiler() =
+    let measures = ResizeArray()
+    let total = Stopwatch.StartNew()
+
+    member __.Time msg f = 
+        let sw = Stopwatch.StartNew()
+        let res = f()
+        measures.Add(msg, sw.Elapsed)
+        res
+
+    member __.TimeAsync msg f = async {
+        let sw = Stopwatch.StartNew()
+        let! res = f()
+        measures.Add(msg, sw.Elapsed)
+        return res }
+
+    member __.Stop() = total.Stop()
+    
+    member __.Result =
+        sprintf
+            "\nTotal = %O\n%s" 
+            total.Elapsed
+            (measures 
+             |> Seq.groupBy (fun (msg, _) -> msg)
+             |> Seq.map (fun (msg, ts) -> 
+                 msg, TimeSpan.FromTicks (ts |> Seq.sumBy (fun (_, t) -> t.Ticks)))
+             |> Seq.sortBy (fun (_, t) -> -t)
+             |> Seq.fold (fun (acc: StringBuilder) (msg, t) -> 
+                 acc.AppendLine (sprintf "%s, %O" msg t)) (StringBuilder())
+             |> fun sb -> string sb)
+
+
+open System.Collections.Generic
+
+type DictionaryBuilder<'key,'value when 'key:equality> () =
+    let dict = Dictionary<'key,'value>()
+
+    member __.Zero  ()  = dict
+    member __.Yield (_) = dict
+    [<CustomOperation "add">]
+    ///<summary>    Add the key and value to the dictionary if not already present
+    ///<para/>      overwrite the value for the key if the key is present 
+    ///</summary>
+    member __.Add (dict:Dictionary<'key,'value>,(key,value)) =
+        if dict.ContainsKey key then dict.[key] <- value
+        else dict.Add (key,value)
+
+    [<CustomOperation "tryAdd">]
+    ///<summary>    Add the key and value to the dictionary if not already present
+    ///<para/>      If the key is present don't add
+    ///</summary>
+    member __.TryAdd (dict:Dictionary<'key,'value>,(key,value)) =
+        if dict.ContainsKey key then () else
+        dict.Add (key,value)
+
+
+
 
 /// Maybe computation expression builder, copied from ExtCore library
 /// https://github.com/jack-pappas/ExtCore/blob/master/ExtCore/Control.fs
@@ -366,7 +570,7 @@ type MaybeBuilder () =
     // unit -> M<'T>
     [<DebuggerStepThrough>]
     member inline __.Zero (): unit option =
-        None    // TODO: Should this be None?
+        Some ()  // TODO: Should this be None?
 
     // (unit -> M<'T>) -> M<'T>
     [<DebuggerStepThrough>]
@@ -572,164 +776,35 @@ module Pervasive =
     /// Path.Combine
     let (</>) path1 path2 = Path.Combine (path1, path2)
 
-[<RequireQualifiedAccess>]
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module String =
-    let lowerCaseFirstChar (str: string) =
-        match str with
-        | null -> null
-        | str ->
-            match str.ToCharArray () with
-            | [||] -> str
-            | arr when Char.IsUpper arr.[0] -> 
-                arr.[0] <- Char.ToLower arr.[0]
-                String (arr)
-            | _ -> str
 
-    let extractTrailingIndex (str: string) =
-        match str with
-        | null -> null, None
-        | _ ->
-            let chars = 
-                let mutable charr = (str.ToCharArray ())
-                Array.revInPlace &charr; charr
-            let digits = 
-                let mutable darr = chars |> Array.takeWhile Char.IsDigit
-                Array.revInPlace &darr; darr
-            String digits
-            |> function
-               | "" -> str, None
-               | index -> str.Substring (0, str.Length - index.Length), Some (int index)
+    type IDictionary<'k,'v> with //'key,'value when 'key:equality> with
 
-    /// Remove all trailing and leading whitespace from the string
-    /// return null if the string is null
-    let inline trim (value: string) = match value with null -> null | x -> x.Trim()
+        [<CustomOperation "add">]
+        ///<summary>    Add the key and value to the dictionary if not already present
+        ///<para/>      overwrite the value for the key if the key is present 
+        ///</summary>
+        member self.AddOp (_,(key,value)) =
+            if self.ContainsKey key then self.[key] <- value
+            else self.Add (key,value)
 
-    /// Splits a string into substrings based on the strings in the array seperators
-    let inline split options (separator: string[]) (value: string) = 
-        match value with null -> null | x -> x.Split(separator, options)
+        [<CustomOperation "tryAdd">]
+        ///<summary>    Add the key and value to the dictionary if not already present
+        ///<para/>      If the key is present don't add
+        ///</summary>
+        member self.TryAddOp (key,value) =
+            if self.ContainsKey key then () else
+            self.Add (key,value)
 
-    let (|StartsWith|_|) pattern value =
-        if String.IsNullOrWhiteSpace(value) then
-            None
-        elif value.StartsWith(pattern) then
-            Some value
-        else None
-
-    let (|Contains|_|) pattern value =
-        if String.IsNullOrWhiteSpace(value) then
-            None
-        elif value.Contains(pattern) then
-            Some value
-        else None
-    
-    open System.IO
-
-    let getLines (str: string) =
-        use reader = new StringReader(str)
-        [|
-        let line = ref (reader.ReadLine())
-        while isNotNull (!line) do
-            yield !line
-            line := reader.ReadLine()
-        if str.EndsWith("\n") then
-            // last trailing space not returned
-            // http://stackoverflow.com/questions/19365404/stringreader-omits-trailing-linebreak
-            yield String.Empty
-        |]
-
-    let getNonEmptyLines (str: string) =
-        use reader = new StringReader (str)
-        [|
-        let line = ref (reader.ReadLine())
-        while isNotNull (!line) do
-            if (!line).Length > 0 then
-                yield !line
-            line := reader.ReadLine()
-        |]
-
-    open System.Text
-    /// Use an accumulation function to create a new string applying a transformation
-    /// to every non-empty line in the string
-    let mapNonEmptyLines (folder: StringBuilder -> string -> StringBuilder) (str: string) =
-        let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt folder
-        use reader = new StringReader (str)
-        let sb = StringBuilder ()
-        let mutable line = reader.ReadLine ()
-        while isNotNull line do
-            if line.Length > 0 then
-                f.Invoke (sb,line) |> ignore
-            line <- reader.ReadLine()
-        string sb
-
-    /// Parse a string to find the first nonempty line
-    /// Return null if the string was null or only contained empty lines
-    let firstNonEmptyLine (str: string) =
-        use reader = new StringReader (str)
-        let rec loop (line:string) =
-            if isNull line then None 
-            elif  line.Length > 0 then Some line
-            else loop (reader.ReadLine())
-        loop (reader.ReadLine())
-
-open System.Text
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module StringBuilder =
-    /// Pipelining function for appending a string to a stringbuilder
-    let inline append   (str:string) (sb:StringBuilder) = sb.Append str
-
-    /// Pipelining function for appending a string with a '\n' to a stringbuilder
-    let inline appendln (str:string) (sb:StringBuilder) = sb.AppendLine str
-    
-    /// SideEffecting function for appending a string to a stringbuilder
-    let appendi (str:string) (sb:StringBuilder) = sb.Append str |> ignore
-
-    /// SideEffecting function for appending a string with a '\n' to a stringbuilder
-    let appendlni (str:string) (sb:StringBuilder) = sb.AppendLine str |> ignore
-
-module Reflection =
-    open System.Reflection
-
-    type private Expr = System.Linq.Expressions.Expression
-    let instanceNonPublic = BindingFlags.Instance ||| BindingFlags.NonPublic
-    
-    let precompileFieldGet<'R>(f : FieldInfo) =
-        let p = Expr.Parameter(typeof<obj>)
-        let lambda = Expr.Lambda<Func<obj, 'R>>(Expr.Field(Expr.Convert(p, f.DeclaringType) :> Expr, f) :> Expr, p)
-        lambda.Compile().Invoke
-
-open System.Text
-open System.Diagnostics
-
-type Profiler() =
-    let measures = ResizeArray()
-    let total = Stopwatch.StartNew()
-
-    member __.Time msg f = 
-        let sw = Stopwatch.StartNew()
-        let res = f()
-        measures.Add(msg, sw.Elapsed)
-        res
-
-    member __.TimeAsync msg f = async {
-        let sw = Stopwatch.StartNew()
-        let! res = f()
-        measures.Add(msg, sw.Elapsed)
-        return res }
-
-    member __.Stop() = total.Stop()
-    
-    member __.Result =
-        sprintf
-            "\nTotal = %O\n%s" 
-            total.Elapsed
-            (measures 
-             |> Seq.groupBy (fun (msg, _) -> msg)
-             |> Seq.map (fun (msg, ts) -> 
-                 msg, TimeSpan.FromTicks (ts |> Seq.sumBy (fun (_, t) -> t.Ticks)))
-             |> Seq.sortBy (fun (_, t) -> -t)
-             |> Seq.fold (fun (acc: StringBuilder) (msg, t) -> 
-                 acc.AppendLine (sprintf "%s, %O" msg t)) (StringBuilder())
-             |> fun sb -> string sb)
+        member __.Yield (_) = ()
+        member __.Zero () = ()
 
     
+    let inline dispose (disposable:#IDisposable) = disposable.Dispose()
+
+    type System.Collections.Generic.List<'a> with
+
+        member inline x.Iter action =            
+            for idx in 0..x.Count-1 do action x.[idx]
+        
+
+
