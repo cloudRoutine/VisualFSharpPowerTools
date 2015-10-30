@@ -59,8 +59,13 @@ type VSLanguageService
      [<Import(typeof<FileSystem>)>] fileSystem: IFileSystem,
      [<Import(typeof<SVsServiceProvider>)>] serviceProvider: IServiceProvider) =
 
-    let globalOptions = Setting.getGlobalOptions serviceProvider
-    let instance = LanguageService (globalOptions.BackgroundCompilation, globalOptions.ProjectCacheSize, fileSystem)
+    // TEMP COMMENT FOR TESTING
+//    let globalOptions = Setting.getGlobalOptions serviceProvider
+//    let instance = LanguageService (globalOptions.BackgroundCompilation, globalOptions.ProjectCacheSize, fileSystem)
+
+    //let globalOptions = Setting.getGlobalOptions serviceProvider
+    let instance = LanguageService (true, 50, fileSystem)
+
 
     /// Log exceptions to 'ActivityLog' if users run 'devenv.exe /Log'.
     /// Clean up instructions are displayed on status bar.
@@ -80,9 +85,9 @@ type VSLanguageService
             if skipLexCache then
                 Lexer.queryLexState source defines line
             else
-                let vsColorState = editorFactory.GetBufferAdapter(textBuffer) :?> IVsTextColorState
+                let vsColorState = editorFactory.GetBufferAdapter textBuffer :?> IVsTextColorState
                 let colorState = fsharpLanguageService.GetColorStateAtStartOfLine(vsColorState, line)
-                fsharpLanguageService.LexStateOfColorState(colorState)
+                fsharpLanguageService.LexStateOfColorState colorState
         with e ->
             debug "[Language Service] %O exception occurs while querying lexing states." e
             Logging.logExceptionWithContext(e, "Exception occurs while querying lexing states.")
@@ -314,7 +319,7 @@ type VSLanguageService
 
     member __.InvalidateProject (projectProvider: IProjectProvider) = 
         async {
-            let! opts = projectProvider.GetProjectCheckerOptions(instance) 
+            let! opts = projectProvider.GetProjectCheckerOptions instance
             return! instance.InvalidateConfiguration opts
         }
 

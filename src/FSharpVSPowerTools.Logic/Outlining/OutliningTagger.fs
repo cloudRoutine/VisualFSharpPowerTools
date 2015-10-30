@@ -230,7 +230,7 @@ type OutliningTagger
             if String.IsNullOrWhiteSpace text then loop (acc+1) else text
         loop firstLineNum
 
-    let outliningOptions = lazy(Setting.getOutliningOptions serviceProvider)
+    let outliningOptions = lazy (Setting.getOutliningOptions serviceProvider)
 
     let collapseByDefault scope =
         let options = outliningOptions.Value
@@ -423,7 +423,7 @@ type OutliningTagger
             TagSpan ( collapseSpan,
                     { new IOutliningRegionTag with
                         member __.CollapsedForm      = collapseText :> obj
-                        member __.IsDefaultCollapsed = collapseByDefault scope
+                        member __.IsDefaultCollapsed = false //collapseByDefault scope  TEMP CHANGE FOR TESTING
                         member __.IsImplementation   = false
                         member __.CollapsedHintForm  =
                             OutliningHint (createElisionBufferView textEditorFactoryService, createBuffer) :> _
@@ -449,7 +449,7 @@ type OutliningTagger
                                         ScopeSpan (s.Scope, s.Collapse, s.SnapSpan.TranslateTo (newSnapshot, SpanTrackingMode.EdgeExclusive)))
             scopedSnapSpans
             |> Seq.filter (fun s -> normalizedSnapshotSpans.IntersectsWith s.SnapSpan)
-            |> Seq.filter (fun s -> outliningEnabled s.Scope)
+            //|> Seq.filter (fun s -> outliningEnabled s.Scope)  TEMP CHANGE FOR TESTING
             |> Seq.choose createTagSpan
 
 

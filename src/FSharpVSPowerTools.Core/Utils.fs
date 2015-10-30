@@ -695,6 +695,80 @@ module AsyncMaybe =
     let inline liftAsync (async : Async<'T>) : Async<_ option> =
         async |> Async.map Some
 
+
+
+[<Sealed>][<DebuggerStepThrough>]
+// this can only return types that might be null
+// unwraps options into null too
+type MaybeNullBuilder () =
+    // 'T -> M<'T>
+
+    member inline __.Return value: 'T when 'T:null =
+        value
+
+    // M<'T> -> M<'T>
+    member inline __.ReturnFrom (option:'T option):'T when 'T:null =
+        match option with
+        | None -> null
+        | Some value -> value
+
+    // unit -> M<'T>
+    member inline __.Zero () = Some null
+
+
+    // (unit -> M<'T>) -> M<'T>
+    member __.Delay (f: _ -> 'T option): 'T option when 'T:null =
+        f ()
+
+    // M<'T> -> M<'T> -> M<'T>
+    // or
+    // M<unit> -> M<'T> -> M<'T>
+    member inline __.Combine (r1, r2: 'T option): 'T option when 'T:null =
+        match r1 with
+        | None -> None
+        | Some () -> r2
+
+    // M<'T> * ('T -> M<'U>) -> M<'U>
+    member inline __.Bind (value:'T option, f: 'T -> 'U option): 'U option when 'T:null and 'U:null  =
+        Option.bind f value
+
+    // 'T * ('T -> M<'U>) -> M<'U> when 'U :> IDisposable
+    member __.Using (resource: ('T :> System.IDisposable), body: _ -> _ option): _ option =
+        try body resource
+        finally
+            if not <| obj.ReferenceEquals (null, box resource) then
+                resource.Dispose ()
+
+    // (unit -> bool) * M<'T> -> M<'T>
+    member x.While (guard, body: _ option): _ option =
+        if guard () then
+            // OPTIMIZE: This could be simplified so we don't need to make calls to Bind and While.
+//            x.Bind (body, (fun _ -> x.While (guard, body)))
+            Option.bind (fun _ -> x.While (guard, body)) body
+        else
+            x.Zero ()
+
+    // seq<'T> * ('T -> M<'U>) -> M<'U>
+    // or
+    // seq<'T> * ('T -> M<'U>) -> seq<M<'U>>
+    member x.For (sequence: seq<_>, body: 'T -> _ option): _ option =
+        // OPTIMIZE: This could be simplified so we don't need to make calls to Using, While, Delay.
+        using (sequence.GetEnumerator()) (fun enum ->
+//            x.While ( enum.MoveNext, x.Delay (fun _ -> body enum.Current)))
+            x.While ( enum.MoveNext,  body enum.Current))
+
+    member __.Run (option:'T option) : 'T when 'T:null=
+        match option with
+        | None -> null
+        | Some value -> value
+        
+    member __.Run (delayFunc:unit->'T option) : 'T when 'T:null=
+        match delayFunc() with
+        | None -> null
+        | Some value -> value
+        
+
+
 [<AutoOpen; CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
 module Pervasive =
     open System.Diagnostics
@@ -708,6 +782,7 @@ module Pervasive =
 #endif
 
     let maybe = MaybeBuilder()
+    let maybeNull = MaybeNullBuilder()
     let asyncMaybe = AsyncMaybeBuilder()
     
     /// Load times used to reset type checking properly on script/project load/unload. It just has to be unique for each project load/reload.
