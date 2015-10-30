@@ -14,27 +14,27 @@ module Reflection =
     
     let (?) (o : obj) name : 'R = 
         // The return type is a function, which means that we want to invoke a method
-        if FSharpType.IsFunction(typeof<'R>) then 
-            let argType, _resType = FSharpType.GetFunctionElements(typeof<'R>)            
-            FSharpValue.MakeFunction(typeof<'R>, 
-                fun args -> 
+        if FSharpType.IsFunction typeof<'R> then 
+            let argType, _resType = FSharpType.GetFunctionElements typeof<'R>
+            FSharpValue.MakeFunction 
+                (typeof<'R>, fun args -> 
                     // We treat elements of a tuple passed as argument as a list of arguments
                     // When the 'o' object is 'System.Type', we call static methods
                     let methods, instance, args = 
-                        let typeInfo = o.GetType()
+                        let typeInfo = o.GetType ()
                         let args = 
                             if argType = typeof<unit> then [||]
-                            elif not (FSharpType.IsTuple(argType)) then [| args |]
-                            else FSharpValue.GetTupleFields(args)                        
-                        if (typeof<System.Type>).IsAssignableFrom(typeInfo) then 
-                            let methods = (unbox<Type> o).GetMethods(staticFlags) |> Array.map asMethodBase
+                            elif not (FSharpType.IsTuple argType) then [| args |]
+                            else FSharpValue.GetTupleFields args                        
+                        if typeof<System.Type>.IsAssignableFrom typeInfo then 
+                            let methods = (unbox<Type> o).GetMethods staticFlags |> Array.map asMethodBase
                             let ctors = 
-                                (unbox<Type> o).GetConstructors(ctorFlags) 
+                                (unbox<Type> o).GetConstructors ctorFlags
                                 |> Array.map asMethodBase
                             Array.concat [ methods; ctors ], null, args
                         else 
-                            typeInfo.GetMethods(instanceFlags) |> Array.map asMethodBase, o, 
-                            args
+                            typeInfo.GetMethods instanceFlags 
+                            |> Array.map asMethodBase, o, args
                                          
                     // A simple overload resolution based on the name and number of parameters only
                     let methods = 
@@ -46,21 +46,21 @@ module Reflection =
                     | [] -> failwithf "No method '%s' with %d arguments found" name args.Length
                     | _ :: _ :: _ -> 
                         failwithf "Multiple methods '%s' with %d arguments found" name args.Length
-                    | [ :? ConstructorInfo as c ] -> c.Invoke(args)
+                    | [ :? ConstructorInfo as c ] -> c.Invoke args
                     | [ m ] -> m.Invoke(instance, args))
             |> unbox<'R>
         else 
             // When the 'o' object is 'System.Type', we access static properties
             let typ, flags, instance = 
-                if (typeof<System.Type>).IsAssignableFrom(o.GetType()) then unbox o, staticFlags, null
+                if (typeof<System.Type>).IsAssignableFrom (o.GetType ()) then unbox o, staticFlags, null
                 else o.GetType(), instanceFlags, o
             
             // Find a property that we can call and get the value
-            let prop = typ.GetProperty(name, flags)
+            let prop = typ.GetProperty (name, flags)
             if prop = null then failwithf "Property '%s' not found in '%s' using flags '%A'." name typ.Name flags
-            let meth = prop.GetGetMethod(true)
+            let meth = prop.GetGetMethod true
             if prop = null then failwithf "Property '%s' found, but doesn't have 'get' method." name
-            meth.Invoke(instance, [||]) |> unbox<'R>
+            meth.Invoke (instance, [||]) |> unbox<'R>
 
     let (?<-) (o: obj) name value =
       o.GetType().GetProperty(name).SetValue(o, value, null)
@@ -84,7 +84,7 @@ type FSharpLanguageService [<ImportingConstructor>]
         String.Format("FSharp.LanguageService, Version={0}.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a", 
                         VisualStudioVersion.toString version)
                               
-    let asm = lazy try Assembly.Load(assemblyInfo)
+    let asm = lazy try Assembly.Load assemblyInfo
                    with _ ->
                        let ex = AssemblyMissingException "FSharp.LanguageService"
                        Logging.logException ex
@@ -93,23 +93,23 @@ type FSharpLanguageService [<ImportingConstructor>]
     let staticFlags = BindingFlags.NonPublic ||| BindingFlags.Public ||| BindingFlags.Static
 
     let getColorStateAtStartOfLine = lazy (
-        let ty = asm.Value.GetType("Microsoft.VisualStudio.FSharp.LanguageService.VsTextColorState")
+        let ty = asm.Value.GetType "Microsoft.VisualStudio.FSharp.LanguageService.VsTextColorState"
         let m = ty.GetMethod ("GetColorStateAtStartOfLine", staticFlags)
         let stateParam = Expr.Parameter typeof<IVsTextColorState>
         let lineParam = Expr.Parameter typeof<int>
-        let lambda = Expr.Lambda<Func<IVsTextColorState, int, int>>(Expr.Call(m, stateParam, lineParam), stateParam, lineParam)
+        let lambda = Expr.Lambda<Func<IVsTextColorState, int, int>> (Expr.Call (m, stateParam, lineParam), stateParam, lineParam)
         lambda.Compile().Invoke
     )
     
     let lexStateOfColorState = lazy (
-        let ty = asm.Value.GetType("Microsoft.VisualStudio.FSharp.LanguageService.ColorStateLookup")
+        let ty = asm.Value.GetType "Microsoft.VisualStudio.FSharp.LanguageService.ColorStateLookup"
         let m = ty.GetMethod ("LexStateOfColorState", staticFlags)
         let lineParam = Expr.Parameter typeof<int>
-        let lambda = Expr.Lambda<Func<int, int64>>(Expr.Call(m, lineParam), lineParam)
+        let lambda = Expr.Lambda<Func<int, int64>> (Expr.Call (m, lineParam), lineParam)
         lambda.Compile().Invoke
     )
 
-    member __.GetColorStateAtStartOfLine(vsColorState: IVsTextColorState, line: int): int =
-        getColorStateAtStartOfLine.Value(vsColorState, line)
+    member __.GetColorStateAtStartOfLine (vsColorState: IVsTextColorState, line: int): int =
+        getColorStateAtStartOfLine.Value (vsColorState, line)
 
-    member __.LexStateOfColorState(colorState: int): int64 = lexStateOfColorState.Value colorState
+    member __.LexStateOfColorState (colorState: int): int64 = lexStateOfColorState.Value colorState
