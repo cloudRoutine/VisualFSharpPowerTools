@@ -140,6 +140,8 @@
     <Compile Include="PowerToolsCommandsPackage.fs" />
     <Compile Include="Commands\OutliningTaggerProvider.fs" />
     <Compile Include="Commands\SyntaxConstructClassifierProvider.fs" />
+    <Compile Include="Commands\StandardCommandDispatcher.fs" />
+    <Compile Include="Commands\CodeFormattingHookHelper.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FsXaml.Wpf, Version=0.9.9.0, Culture=neutral, processorArchitecture=MSIL">
