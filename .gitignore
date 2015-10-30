@@ -195,3 +195,5 @@ gallerycredentials.txt
 
 *.FSharpLint
 .vs/config/applicationhost.config
+.paket/paket.bootstrapper.exe
+.paket/paket.targets
