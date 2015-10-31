@@ -174,8 +174,10 @@ type SyntaxConstructClassifier
             None
         else Some()
 
-    let mergeSpans (oldSpans: CategorizedColumnSpan<_>[]) (newSpans: CategorizedColumnSpan<_>[]) =
+    let mergeSpans (oldSpans: _ CategorizedColumnSpan []) (newSpans: _ CategorizedColumnSpan []): _ CategorizedColumnSpan [] =
+
         let getLineRange spans =
+            if isNull spans || spans = [||] then (-1,-1) else
             let lines = 
                 spans 
                 |> Array.filter (fun x -> 
@@ -187,25 +189,45 @@ type SyntaxConstructClassifier
                     | Category.Quotation -> false
                     | _ -> true) 
                 |> Array.map (fun x -> x.WordSpan.Line)
+            if isNull lines || lines = [||] then (-1,-1) else
             Array.min lines, Array.max lines
+
+        let compareSpans oldSpans newSpans =
+            let newStartLine, newEndLine = getLineRange newSpans
+            //if (newStartLine, newEndLine) = (-1,-1) then oldSpans else 
+            let oldStartLine, oldEndLine = getLineRange oldSpans
+            //if (oldStartLine, oldEndLine ) = (-1,-1) then newSpans 
+            if newStartLine <= oldStartLine && newEndLine >= oldEndLine then
+                debug "[SyntaxConstructClassifier] Replace spans entirely."
+                newSpans
+            else
+                debug "[SyntaxConstructClassifier] Mergin spans (new range %A < old range %A)."
+                      (newStartLine, newEndLine) (oldStartLine, oldEndLine)
+//
+//                let oldSpans = 
+//                    seq { yield! oldSpans |> Seq.takeWhile (fun x -> x.WordSpan.Line < newStartLine)
+//                          yield! oldSpans |> Seq.skipWhile (fun x -> x.WordSpan.Line < newEndLine) }
+//                let spans =
+                seq {
+                    yield (oldSpans |> Array.takeWhile (fun x -> x.WordSpan.Line < newStartLine))
+                    yield (oldSpans |> Array.skipWhile (fun x -> x.WordSpan.Line < newEndLine)) 
+                    yield newSpans
+                }   |> Array.concat 
+                    |> Array.sortBy(fun x -> x.WordSpan.Line) //spans
+//                spans
+//                let res =
+//                    oldSpans
+//                    |> Seq.append newSpans
+//                    |> Seq.sortBy (fun x -> x.WordSpan.Line)
+//                    |> Seq.toArray
+                //res
+        if Array.isEmpty oldSpans && Array.isEmpty newSpans then [||] else
+        match oldSpans , newSpans with
+        | null, null     -> [||]
+        | [||], nspans   -> nspans 
+        | ospans , [||]  -> ospans
+        | ospans, nspans -> compareSpans ospans nspans
             
-        let newStartLine, newEndLine = getLineRange newSpans
-        let oldStartLine, oldEndLine = getLineRange oldSpans
-        if newStartLine <= oldStartLine && newEndLine >= oldEndLine then
-            debug "[SyntaxConstructClassifier] Replace spans entirely."
-            newSpans
-        else
-            debug "[SyntaxConstructClassifier] Mergin spans (new range %A < old range %A)."
-                  (newStartLine, newEndLine) (oldStartLine, oldEndLine)
-
-            let oldSpans = 
-                seq { yield! oldSpans |> Seq.takeWhile (fun x -> x.WordSpan.Line < newStartLine)
-                      yield! oldSpans |> Seq.skipWhile (fun x -> x.WordSpan.Line < newEndLine) }
-
-            oldSpans
-            |> Seq.append newSpans
-            |> Seq.sortBy (fun x -> x.WordSpan.Line)
-            |> Seq.toArray
 
     let updateUnusedDeclarations() = 
         let worker (project, snapshot) =

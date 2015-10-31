@@ -185,9 +185,20 @@ module Array =
         checkNonNull "array" array
         if array.Length = 0 then Array.empty else
         let mutable count = 0
-        while count < array.Length && predicate array.[count] do
+        while count < array.Length-1 && predicate array.[count] do
             count <- count + 1
         array.[0..count]
+
+    /// Return an array of elements that preceded the first element that failed
+    /// to satisfy the predicate
+    let skipWhile predicate (array: 'T[]) =
+        checkNonNull "array" array
+        if array.Length = 0 then Array.empty else
+        let mutable count = 0
+        while count < array.Length-1 && predicate array.[count] do
+            count <- count + 1
+        array.[count..array.Length-1]
+
 
 
 [<RequireQualifiedAccess>]
@@ -824,6 +835,7 @@ module Pervasive =
                     and remover1: IDisposable = ev1.Subscribe(callback1)
                     and remover2: IDisposable = ev2.Subscribe(callback2)
                     ())))
+
 
     type Atom<'T when 'T: not struct>(value: 'T) =
         let refCell = ref value
