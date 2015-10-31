@@ -78,7 +78,19 @@ module OutputWindowHelper =
     
     /// This global output window is initialized once for each Visual Studio session.
     let outputWindowPane = lazy(tryGetPowerToolsWindowPane(Logger.GlobalServiceProvider))
-    let globalOptions = lazy(Setting.getGlobalOptions(Logger.GlobalServiceProvider))
+    //let globalOptions = lazy(Setting.getGlobalOptions(Logger.GlobalServiceProvider))
+    let globalOptions = 
+        {   new IGlobalOptions with
+                member x.BackgroundCompilation
+                    with get (): bool = true
+                    and set (v: bool): unit = ()
+                member x.DiagnosticMode
+                    with get (): bool = true
+                    and set (v: bool): unit = ()
+                member x.ProjectCacheSize
+                    with get (): int = 50
+                    and set (v: int): unit =  ()
+        }
 
     let diagnose logType msg =
         outputWindowPane.Value 
@@ -93,7 +105,7 @@ module Logging =
 
     let internal log logType (produceMessage: _ -> string) = 
         // Guard against exceptions since it's not entirely clear that GlobalProvider will be populated correctly.
-        if (try globalOptions.Value.DiagnosticMode with _ -> false) then
+        if (try globalOptions.DiagnosticMode with _ -> false) then
             let msg = produceMessage()
             diagnose logType msg
             logger.Value.Log(logType, msg)

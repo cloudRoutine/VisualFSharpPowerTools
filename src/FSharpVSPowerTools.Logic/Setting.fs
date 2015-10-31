@@ -135,7 +135,7 @@ module Setting =
 
     let getDefaultMemberBody (codeGenOptions: ICodeGenerationOptions) =
         match codeGenOptions.CodeGenerationOptions with
-        | CodeGenerationKinds.Failwith -> "failwith \"Not implemented yet\""
+        | CodeGenerationKinds.Failwith -> "failwith \"Chill out, it's not done yet\""
         | CodeGenerationKinds.NotImplementedYet -> "raise (System.NotImplementedException())"
         | CodeGenerationKinds.DefaultValue -> "Unchecked.defaultof<_>"
         | _ -> codeGenOptions.DefaultBody

@@ -10,37 +10,37 @@ open System
 open System.ComponentModel.Composition
 
 //namespace 
-//{
-[<Export(typeof<IWpfTextViewMarginProvider>)>]
-[<Name(Constants.QuickInfoMargin)>]
-[<Order(After = PredefinedMarginNames.HorizontalScrollBar)>]
-[<MarginContainer(PredefinedMarginNames.Bottom)>]
-[<ContentType("F#")>]
-[<TextViewRole(PredefinedTextViewRoles.Document)>]
-type QuickInfoMarginProvider [<ImportingConstructor>] 
-    (   [<Import(typeof<SVsServiceProvider>)>] 
-        serviceProvider                 :   IServiceProvider            ,
-        textDocumentFactoryService      :   ITextDocumentFactoryService ,
-        projectFactory                  :   ProjectFactory              ,
-        vsLanguageService               :   VSLanguageService           ) as self =
-
-    member x.CreateMargin(wpfTextViewHost: IWpfTextViewHost, marginContainer: IWpfTextViewMargin) = 
-        //let generalOptions = Setting.getGeneralOptions serviceProvider
-        //if not generalOptions.QuickInfoPanelEnabled then null else 
-        let textView = wpfTextViewHost.TextView
-        let buffer = textView.TextBuffer
-        maybe {
-            let! doc = textDocumentFactoryService.TryDocumentFromBuffer buffer
-            return
-                new QuickInfoMargin( doc, textView, vsLanguageService, serviceProvider, projectFactory)
-                :> IWpfTextViewMargin
-        } 
-
-
-    interface IWpfTextViewMarginProvider with
-        member x.CreateMargin(wpfTextViewHost: IWpfTextViewHost, marginContainer: IWpfTextViewMargin): IWpfTextViewMargin = 
-            self.CreateMargin (wpfTextViewHost,marginContainer) 
-            |> Option.getOrElse marginContainer
+////{
+//[<Export(typeof<IWpfTextViewMarginProvider>)>]
+//[<Name(Constants.QuickInfoMargin)>]
+//[<Order(After = PredefinedMarginNames.HorizontalScrollBar)>]
+//[<MarginContainer(PredefinedMarginNames.Bottom)>]
+//[<ContentType("F#")>]
+//[<TextViewRole(PredefinedTextViewRoles.Document)>]
+//type QuickInfoMarginProvider [<ImportingConstructor>] 
+//    (   [<Import(typeof<SVsServiceProvider>)>] 
+//        serviceProvider                 :   IServiceProvider            ,
+//        textDocumentFactoryService      :   ITextDocumentFactoryService ,
+//        projectFactory                  :   ProjectFactory              ,
+//        vsLanguageService               :   VSLanguageService           ) as self =
+//
+//    member x.CreateMargin(wpfTextViewHost: IWpfTextViewHost, marginContainer: IWpfTextViewMargin) = 
+//        //let generalOptions = Setting.getGeneralOptions serviceProvider
+//        //if not generalOptions.QuickInfoPanelEnabled then null else 
+//        let textView = wpfTextViewHost.TextView
+//        let buffer = textView.TextBuffer
+//        maybe {
+//            let! doc = textDocumentFactoryService.TryDocumentFromBuffer buffer
+//            return
+//                new QuickInfoMargin( doc, textView, vsLanguageService, serviceProvider, projectFactory)
+//                :> IWpfTextViewMargin
+//        } 
+//
+//
+//    interface IWpfTextViewMarginProvider with
+//        member x.CreateMargin(wpfTextViewHost: IWpfTextViewHost, marginContainer: IWpfTextViewMargin): IWpfTextViewMargin = 
+//            self.CreateMargin (wpfTextViewHost,marginContainer) 
+//            |> Option.getOrElse marginContainer
 
 
     

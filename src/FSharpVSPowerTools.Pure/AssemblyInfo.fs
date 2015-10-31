@@ -5,7 +5,7 @@ open System.Runtime.CompilerServices
 [<assembly: InternalsVisibleToAttribute("FSharpVSPowerTools.Tests")>]
 [<assembly: AssemblyTitleAttribute("FSharpVSPowerTools.Pure")>]
 [<assembly: AssemblyProductAttribute("FSharpVSPowerTools")>]
-[<assembly: AssemblyDescriptionAttribute("A collection of additional commands for F# in Visual Studio")>]
+[<assembly: AssemblyDescriptionAttribute("The Purest Source of F# Power in Visual Studio")>]
 [<assembly: AssemblyVersionAttribute("2.2.0")>]
 [<assembly: AssemblyFileVersionAttribute("2.2.0")>]
 do ()

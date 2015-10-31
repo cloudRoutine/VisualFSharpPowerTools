@@ -23,19 +23,19 @@ type OpenDocumentsTracker [<ImportingConstructor>](textDocumentFactoryService: I
     let documentClosed = Event<_>()
 
     member __.RegisterView(view: IWpfTextView) = 
-        ForegroundThreadGuard.CheckThread()
+        //ForegroundThreadGuard.CheckThread()
         match textDocumentFactoryService.TryGetTextDocument view.TextBuffer with
         | true, doc ->
             let path = doc.FilePath
             let textBufferChanged (args: TextContentChangedEventArgs) =
-                ForegroundThreadGuard.CheckThread()
+                //ForegroundThreadGuard.CheckThread()
                 openDocuments <- Map.add path (OpenDocument.Create doc args.After doc.Encoding) openDocuments
                 documentChanged.Trigger path
 
             let textBufferChangedSubscription: IDisposable = view.TextBuffer.ChangedHighPriority.Subscribe textBufferChanged
             
             let rec viewClosed _ = 
-                ForegroundThreadGuard.CheckThread()
+                //ForegroundThreadGuard.CheckThread()
                 textBufferChangedSubscription.Dispose()
                 viewClosedSubscription.Dispose()
                 openDocuments <- Map.remove path openDocuments
