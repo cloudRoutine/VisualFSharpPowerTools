@@ -68,7 +68,7 @@
   <Target Name="AfterBuild">
   </Target>
   -->
-  <Import Project="$(SolutionDir)\.paket\paket.targets" />
+  <!--<Import Project="$(SolutionDir)\.paket\paket.targets" />-->
   <ItemGroup>
     <Content Include="net40\Foq.Usage.fsx">
       <Paket>True</Paket>
