@@ -1,4 +1,4 @@
-﻿namespace FSharpVSPowerTools.SyntaxColoring
+namespace FSharpVSPowerTools.SyntaxColoring
 
 open System
 open System.IO
@@ -156,13 +156,12 @@ type SyntaxConstructClassifier
 
             let! openDecls = OpenDeclarationGetter.getOpenDeclarations ast entities qualifyOpenDeclarations
             return
-                entities
-                |> Option.map (fun entities ->
-                     entities
-                     |> Seq.groupBy (fun e -> e.FullName)
-                     |> Seq.map (fun (key, es) -> key, es |> Seq.map (fun e -> e.CleanedIdents) |> Seq.toList)
-                     |> Dict.ofSeq),
-                openDecls
+                (entities
+                    |> Option.map
+                     (Seq.groupBy (fun e -> e.FullName)
+                     >> Seq.map (fun (key, es) -> key, es |> Seq.map (fun e -> e.CleanedIdents) |> Seq.toList)
+                     >> Dict.ofSeq)
+                                    , openDecls)
         }
     }
 
@@ -223,10 +222,10 @@ type SyntaxConstructClassifier
             Logging.logInfo (fun _ ->
                 sprintf "[SyntaxConstructClassifier] Merging spans (new range %A < old range %A)."
                         (newStartLine, newEndLine) (oldStartLine, oldEndLine))
-            seq { 
+            seq {
                 yield! oldSpans |> Seq.takeWhile (fun x -> x.WordSpan.Line < newStartLine)
-                yield! oldSpans |> Seq.skipWhile (fun x -> x.WordSpan.Line < newEndLine) 
-                yield! newSpans  
+                yield! oldSpans |> Seq.skipWhile (fun x -> x.WordSpan.Line < newEndLine)
+                yield! newSpans
             }
             |> Seq.sortBy (fun x -> x.WordSpan.Line)
             |> Seq.toArray
@@ -272,11 +271,9 @@ type SyntaxConstructClassifier
 
                 let notUsedSpans =
                     spans
-                    |> Array.filter (fun s -> s.Category = Category.Unused)
-                    |> Array.map (fun s ->
-                        s.WordSpan,
-                        // save current snapshot in order to create a proper SnapshotSpan from it
-                        { s with Snapshot = Some snapshot })
+                    |> Array.filterMap  (fun s -> s.Category = Category.Unused)
+                                        // save current snapshot in order to create a proper SnapshotSpan from it
+                                        (fun s -> s.WordSpan, { s with Snapshot = Some snapshot })
                     |> Map.ofArray
 
                 fastState.Swap (function
@@ -389,13 +386,13 @@ type SyntaxConstructClassifier
                                 |> Async.map (
                                        Array.choose id
                                     >> Array.concat
-                                    >> Seq.distinct
-                                    >> Seq.map (fun opts ->
+                                    >> Array.distinct
+                                    >> Array.map (fun opts ->
                                         { Options = opts
                                           // we mark standalone FSX's fake project as already checked
                                           // because otherwise the slow stage never completes
                                           Checked = currentProject.IsForStandaloneScript })
-                                    >> Seq.toList)
+                                    >> Array.toList)
                         else return [] } |> liftAsync
 
                 fastState.Swap (fun oldState ->
@@ -472,27 +469,25 @@ type SyntaxConstructClassifier
         | FastStage.Updating (Some { FastStageData.Snapshot = snapshot; Spans = spans }, _) ->
             let spanStartLine = max 0 (targetSnapshotSpan.Start.GetContainingLine().LineNumber - 10)
             let spanEndLine = targetSnapshotSpan.End.GetContainingLine().LineNumber + 10
-            let spans =
-                spans
-                // Locations are sorted, so we can safely filter them efficiently
-                |> Seq.skipWhile (fun span -> span.WordSpan.Line < spanStartLine)
-                |> Seq.choose (fun columnSpan ->
-                    maybe {
-                        let! clType = getClassificationType columnSpan.Category
-                        // Create a span on the original snapshot
-                        let origSnapshot = columnSpan.Snapshot |> Option.getOrElse snapshot
-                        let! span = fromRange origSnapshot (columnSpan.WordSpan.ToRange())
-                        let span =
-                            if targetSnapshotSpan.Snapshot <> span.Snapshot then
-                                span.TranslateTo(targetSnapshotSpan.Snapshot, SpanTrackingMode.EdgeExclusive)
-                            else span
-                        // Translate the span to the new snapshot
-                        return clType, span
-                    })
-                |> Seq.takeWhile (fun (_, span) -> span.Start.GetContainingLine().LineNumber <= spanEndLine)
-                |> Seq.map (fun (clType, span) -> ClassificationSpan(span, clType))
-                |> Seq.toArray
             spans
+            // Locations are sorted, so we can safely filter them efficiently
+            |> Seq.skipWhile (fun span -> span.WordSpan.Line < spanStartLine)
+            |> Seq.choose (fun columnSpan ->
+                maybe {
+                    let! clType = getClassificationType columnSpan.Category
+                    // Create a span on the original snapshot
+                    let origSnapshot = columnSpan.Snapshot |> Option.getOrElse snapshot
+                    let! span = fromRange origSnapshot (columnSpan.WordSpan.ToRange())
+                    let span =
+                        if targetSnapshotSpan.Snapshot <> span.Snapshot then
+                            span.TranslateTo(targetSnapshotSpan.Snapshot, SpanTrackingMode.EdgeExclusive)
+                        else span
+                    // Translate the span to the new snapshot
+                    return clType, span
+                })
+            |> Seq.takeWhile (fun (_, span) -> span.Start.GetContainingLine().LineNumber <= spanEndLine)
+            |> Seq.map (fun (clType, span) -> ClassificationSpan (span, clType))
+            |> Seq.toArray
         | FastStage.NoData ->
             // Only schedule an update on signature files
             if isSignatureExtension(Path.GetExtension(textDocument.FilePath)) then

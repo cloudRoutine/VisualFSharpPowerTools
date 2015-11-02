@@ -1,4 +1,4 @@
-﻿namespace FSharpVSPowerTools.QuickInfo
+namespace FSharpVSPowerTools.QuickInfo
 
 open System
 open System.Text
@@ -12,14 +12,6 @@ open FSharpVSPowerTools.StringBuilder
 open FSharp.ViewModule
 open Microsoft.FSharp.Compiler
 open Microsoft.FSharp.Compiler.SourceCodeServices
-
-[<AutoOpen>]
-module private Extensions =
-    type FSharpErrorSeverity with
-        member x.ToString () =
-            match x with
-            | FSharpErrorSeverity.Warning -> "Warning"
-            | FSharpErrorSeverity.Error -> "Error"
 
 type QuickInfoVisual = FsXaml.XAML<"QuickInfoMargin.xaml", ExposeNamedProperties=true>
 
@@ -48,18 +40,19 @@ type QuickInfoMargin (textDocument: ITextDocument,
     let buffer = view.TextBuffer
     let mutable currentWord: SnapshotSpan option = None
 
+
     let updateQuickInfo (tooltip: string option, errors: ((FSharpErrorSeverity * string list) []) option,
-                         newWord: SnapshotSpan option) = lock updateLock <| fun () -> 
+                         newWord: SnapshotSpan option) = lock updateLock <| fun () ->
         currentWord <- newWord
-        
+
         // helper function to lead a string builder across the collection of
         // errors accumulating lines annotated with their index number
         let errorString (errors:string list) (sb:StringBuilder) =
             match errors with
             | [e] -> append e sb
             | _ -> (sb, errors ) ||> List.foldi (fun sb i e ->
-                sb |> append (sprintf "%d. %s" (i + 1) e) |> append " ")        
-        
+                sb |> append (sprintf "%d. %s" (i + 1) e) |> append " ")
+
         let currentInfo =
             match errors, tooltip with
             | Some es, _ -> // if the tooltip contains errors show them
@@ -80,8 +73,8 @@ type QuickInfoMargin (textDocument: ITextDocument,
                         if index > 0 then str.[0..index-1] else str
                     else str
                 | None -> ""
-            | None, None -> ""  // if there are no results the panel will be empty        
-        
+            | None, None -> ""  // if there are no results the panel will be empty
+
         model.QuickInfo <- currentInfo
 
     // helper function in the form required by mapNonEmptyLines
@@ -98,6 +91,7 @@ type QuickInfoMargin (textDocument: ITextDocument,
         | Some '.' -> flatstr
         | Some _ -> flatstr + "."
 
+
     let updateAtCaretPosition () =
         let caretPos = view.Caret.Position
         match buffer.GetSnapshotPoint caretPos, currentWord with
@@ -106,7 +100,7 @@ type QuickInfoMargin (textDocument: ITextDocument,
             let project =
                 maybe {
                     let dte = serviceProvider.GetService<EnvDTE.DTE, SDTE>()
-                    let! doc = dte.GetCurrentDocument (textDocument.FilePath)
+                    let! doc = dte.GetCurrentDocument(textDocument.FilePath)
                     let! project = projectFactory.CreateForDocument buffer doc
                     return project }
             asyncMaybe {
@@ -120,7 +114,6 @@ type QuickInfoMargin (textDocument: ITextDocument,
                             vsLanguageService.GetOpenDeclarationTooltip(
                                 longIdent.Line + 1, longIdent.RightColumn, lineStr, idents, project,
                                 textDocument.FilePath, newWord.Snapshot.GetText())
-
                         let! tooltip =
                             tooltip
                             |> List.tryHead
@@ -167,4 +160,4 @@ type QuickInfoMargin (textDocument: ITextDocument,
             | _ -> Unchecked.defaultof<_>
 
     interface IDisposable with
-        member __.Dispose() = (docEventListener :> IDisposable).Dispose ()
+        member __.Dispose() = (docEventListener :> IDisposable).Dispose()

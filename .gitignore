@@ -199,3 +199,4 @@ gallerycredentials.txt
 .paket/paket.bootstrapper.exe
 
 
+*.FSharpLint

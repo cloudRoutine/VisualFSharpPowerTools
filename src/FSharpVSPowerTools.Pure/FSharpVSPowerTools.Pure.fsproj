@@ -113,19 +113,23 @@
   -->
   <Import Project="..\..\.paket\paket.targets" />
   <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="PowerToolsCommandsPackage.fs" />
+    <Compile Include="Commands\OutliningTaggerProvider.fs" />
+    <Compile Include="Commands\SyntaxConstructClassifierProvider.fs" />
+    <Compile Include="Commands\StandardCommandDispatcher.fs" />
+    <Compile Include="Commands\CodeFormattingHookHelper.fs" />
+    <Compile Include="Commands\QuickInfoMarginProvider.fs" />
+    <EmbeddedResource Include="Resources\FSharpVSPowerTools.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <SubType>Designer</SubType>
+      <MergeWithCTO>true</MergeWithCTO>
+    </EmbeddedResource>
+    <Content Include="Resources\Package.ico" />
+    <None Include="Resources\Images.png" />
     <None Include="paket.references" />
-    <Content Include="..\..\docs\files\img\logo.png">
-      <Link>logo.png</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <IncludeInVSIX>true</IncludeInVSIX>
-    </Content>
     <Content Include="..\..\LICENSE.txt">
       <Link>LICENSE.txt</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <IncludeInVSIX>true</IncludeInVSIX>
-    </Content>
-    <Content Include="..\..\docs\files\img\preview.png">
-      <Link>preview.png</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
@@ -134,28 +138,21 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
-    <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="PowerToolsCommandsPackage.fs" />
-    <Compile Include="VSPackageFSMenu.fs" />
-    <Compile Include="Commands\OutliningTaggerProvider.fs" />
-    <Compile Include="Commands\SyntaxConstructClassifierProvider.fs" />
-    <Compile Include="Commands\StandardCommandDispatcher.fs" />
-    <Compile Include="Commands\CodeFormattingHookHelper.fs" />
-    <Compile Include="Commands\QuickInfoMarginProvider.fs" />
-    <Compile Include="Commands\HighlightUsageFilterProvider.fs" />
+    <Content Include="..\..\docs\files\img\logo.png">
+      <Link>logo.png</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\docs\files\img\preview.png">
+      <Link>preview.png</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <VSCTCompile Include="FSharpVSPowerTools.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
     </VSCTCompile>
-    <EmbeddedResource Include="Resources\FSharpVSPowerTools.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <SubType>Designer</SubType>
-      <MergeWithCTO>true</MergeWithCTO>
-    </EmbeddedResource>
-    <Content Include="Resources\Package.ico" />
-    <None Include="Resources\Images.png" />
     <!--Compile Include="Resources\FSharpVSPowerTools.Designer.fs" /-->
     <None Include="source.extension.vsixmanifest" />
-
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FsXaml.Wpf, Version=0.9.9.0, Culture=neutral, processorArchitecture=MSIL">

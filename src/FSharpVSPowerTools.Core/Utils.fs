@@ -1,6 +1,7 @@
 ﻿namespace FSharpVSPowerTools
 
 open System
+open System.IO
 open System.Diagnostics
 
 
@@ -14,29 +15,41 @@ module Prelude =
     let inline fail msg = Printf.kprintf Debug.Fail msg
     let inline isNull v = match v with | null -> true | _ -> false
     let inline isNotNull v = v |> (not << isNull)
-    /// Dereference a reference cell
-    let inline deref refval = !refval
     let inline dispose (disposable:#IDisposable) = disposable.Dispose ()
-    let tryCast<'T> (o: obj): 'T option =
-        match o with
-        | null -> None
-        | :? 'T as a -> Some a
-        | _ ->
-            debug "Cannot cast %O to %O" (o.GetType()) typeof<'T>.Name
-            None
+    /// Path.Combine
+    let (</>) path1 path2 = Path.Combine (path1, path2)
+
+[<RequireQualifiedAccess>]
+module Null =
+    ///<summary>
+    ///        If the value passed to <code>map</code> is null then return null.
+    ///<para/> Otherwise apply the mapfn to value
+    ///</summary>
+    let inline map mapfn value =
+        if isNull value then null else mapfn value
+
+    let inline fillWith (genDefaultValue: unit -> 'a) x =
+        if isNull x then null else genDefaultValue ()
 
 
 [<RequireQualifiedAccess>]
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+[<CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
 module Seq =
     let tryHead s =
         if Seq.isEmpty s then None else Some (Seq.head s)
 
     let toReadOnlyCollection (xs: _ seq) = ResizeArray(xs).AsReadOnly()
 
+open System.Collections.Generic
 [<RequireQualifiedAccess>]
 module List =
     let tryHead = function [] -> None | h :: _ -> Some h
+
+    let rec last (xs:'a list) =
+        match xs with
+        | [] -> failwith "an empty list has no last element"
+        | [x] -> x
+        | _::tl -> last tl
 
     let rec skipWhile p xs =
         match xs with
@@ -62,13 +75,31 @@ module List =
                 | h::t -> loop (idx+1) (f.Invoke(s,idx,h)) t
             loop 0 state xs
 
-    /// apply the map to all elements that satisfy the predicate
-    let inline filterMap predicate map xs =
-        ([], xs) ||> List.fold (fun acc elm -> if predicate elm then (map elm)::acc else acc )
+
+    let inline groupBy (keyfn:'T->'Key) (list: 'T list) =
+        let dict = Dictionary<'Key,ResizeArray<'T>> (HashIdentity.Structural)
+        // Build the groupings
+        let rec loop list =
+            match list with
+            | v :: t ->
+                let key = keyfn v
+                let ok,prev = dict.TryGetValue key
+                if ok then
+                    prev.Add v
+                else
+                    let prev = new ResizeArray<'T> 1
+                    dict.[key] <- prev
+                    prev.Add v
+                loop t
+            | _ -> ()
+        loop list
+        dict  // Return the list-of-lists.
+        |> Seq.map (fun group -> (group.Key, Seq.toList group.Value))
+        |> Seq.toList
 
 
 [<RequireQualifiedAccess>]
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+[<CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
 module Array =
     let inline private checkNonNull argName arg =
         match box arg with
@@ -95,23 +126,28 @@ module Array =
                 i <- i + 1
             result
 
+    /// check if subArray is found in the wholeArray starting
+    /// at the provided index
+    let inline isSubArray (subArray:'a []) (wholeArray:'a []) index =
+        if isNull subArray || isNull wholeArray then false
+        elif subArray.Length = 0 then true
+        elif subArray.Length > wholeArray.Length then false
+        elif subArray.Length = wholeArray.Length then areEqual subArray wholeArray else
+        let rec loop subidx idx =
+            if subidx = subArray.Length then true
+            elif subArray.[subidx] = wholeArray.[idx] then loop (subidx+1) (idx+1)
+            else false
+        loop 0 index
+
 
     /// Returns true if one array has another as its subset from index 0.
     let startsWith (prefix: _ []) (whole: _ []) =
-        if isNull prefix || isNull whole then false
-        elif prefix.Length = 0 then true
-        elif prefix.Length > whole.Length then false
-        elif prefix.Length = whole.Length then areEqual prefix whole
-        else areEqual whole.[0..prefix.Length-1] prefix
+        isSubArray prefix whole 0
 
 
     /// Returns true if one array has trailing elements equal to another's.
     let endsWith (suffix: _ []) (whole: _ []) =
-        if isNull suffix || isNull whole then false
-        elif suffix.Length = 0 then true
-        elif suffix.Length > whole.Length then false
-        elif suffix.Length = whole.Length then areEqual suffix whole
-        else areEqual whole.[whole.Length-suffix.Length..whole.Length-1] suffix
+        isSubArray suffix whole (whole.Length-suffix.Length)
 
 
     /// Returns a new array with an element replaced with a given value.
@@ -122,6 +158,12 @@ module Array =
         res.[index] <- value
         res
 
+
+    let head (array:'T []) =
+         checkNonNull "array" array
+         if array.Length = 0 then invalidArg "array" "cannot get the head of an empty array"
+
+
     /// Returns all heads of a given array.
     /// For [|1;2;3|] it returns [|[|1; 2; 3|]; [|1; 2|]; [|1|]|]
     let heads (array: 'T []) =
@@ -131,14 +173,18 @@ module Array =
             res.[i] <- array.[0..i]
         res
 
+
     /// Fold over the array passing the index and element at that index to a folding function
     let foldi (folder : 'State -> int -> 'T -> 'State) (state : 'State) (array : 'T[]) =
+        checkNonNull "array" array
+        if array.Length = 0 then state else
         let folder = OptimizedClosures.FSharpFunc<_,_,_,_>.Adapt folder
-        let mutable state = state
+        let mutable state:'State = state
         let len = array.Length
         for i = 0 to len - 1 do
             state <- folder.Invoke (state, i, array.[i])
         state
+
 
     /// Get the first element of the array or None if the Array is null or empty
     let tryHead array =
@@ -146,73 +192,119 @@ module Array =
         | null | [||] -> None
         | arr  -> Some arr.[0]
 
+
     /// Get the last element of the array or None if the Array is null or empty
     let tryLast array =
         match array with
         | null | [||] -> None
         | arr  -> Some arr.[arr.Length-1]
 
-    open System.Collections.Generic
 
     /// Returns an array that contains no duplicate entries according to generic hash and
     /// equality comparisons on the entries.
     /// If an element occurs multiple times in the array then the later occurrences are discarded.
     let distinct (array:'T[]) =
         checkNonNull "array" array
+        if array.Length = 0 then [||] else
         let temp = Array.zeroCreate array.Length
         let mutable i = 0
-        let hashSet = HashSet<'T>(HashIdentity.Structural<'T>)
+        let hashSet = HashSet<'T> HashIdentity.Structural<'T>
         for v in array do
             if hashSet.Add(v) then
                 temp.[i] <- v
                 i <- i + 1
         temp.[0..i-1]
 
+
+    let distinctBy keyf (array:'T[]) =
+        checkNonNull "array" array
+        if array.Length = 0 then [||] else
+        let temp = Array.zeroCreate array.Length
+        let mutable i = 0
+        let hashSet = HashSet<_> HashIdentity.Structural<_>
+        for v in array do
+            if hashSet.Add(keyf v) then
+                temp.[i] <- v
+                i <- i + 1
+        temp.[0..i-1]
+
     /// pass an array byref to reverse it in place
-    let revInPlace (arr: 'a[] byref ) =
-        checkNonNull "array" arr
-        let arrlen, revlen = arr.Length-1, arr.Length/2 - 1
+    let revInPlace (array: 'a[] ) =
+        checkNonNull "array" array
+        if areEqual array [||] then () else
+        let arrlen, revlen = array.Length-1, array.Length/2 - 1
         for idx in 0 .. revlen do
-            let t1 = arr.[idx]
-            let t2 = arr.[arrlen-idx]
-            arr.[idx] <- t2
-            arr.[arrlen-idx] <- t1
+            let t1 = array.[idx]
+            let t2 = array.[arrlen-idx]
+            array.[idx] <- t2
+            array.[arrlen-idx] <- t1
 
 
     /// Return an array of elements that preceded the first element that failed
     /// to satisfy the predicate
     let takeWhile predicate (array: 'T[]) =
         checkNonNull "array" array
-        if array.Length = 0 then Array.empty else
+        if array.Length = 0 then [||] else
         let mutable count = 0
         while count < array.Length-1 && predicate array.[count] do
             count <- count + 1
-        array.[0..count]
+        array.[0..count-1]
 
-    /// Return an array of elements that preceded the first element that failed
+
+    /// Return an array of elements that begin at the first element that failed
     /// to satisfy the predicate
     let skipWhile predicate (array: 'T[]) =
         checkNonNull "array" array
-        if array.Length = 0 then Array.empty else
+        if array.Length = 0 then [||] else
         let mutable count = 0
         while count < array.Length-1 && predicate array.[count] do
             count <- count + 1
         array.[count..array.Length-1]
 
 
+    /// Map all elements of the array that satisfy the predicate
+    let filterMap predicate mapfn (array: 'T[])  =
+        checkNonNull "array" array
+        if array.Length = 0 then [||] else
+        let result = Array.zeroCreate array.Length
+        let mutable count = 0
+        for elm in array do
+            if predicate elm then
+               result.[count] <- mapfn elm
+               count <- count + 1
+        if count = 0 then [||] else
+        result.[0..count-1]
+
+
+    let groupBy (keyfn:'T->'Key) (array: 'T[]) =
+        checkNonNull "array" array
+        let dict = Dictionary<'Key,ResizeArray<'T>> HashIdentity.Structural
+        // Build the groupings
+        for i = 0 to (array.Length - 1) do
+            let v = array.[i]
+            let key = keyfn v
+            let ok, prev = dict.TryGetValue key
+            if ok then
+                prev.Add v
+            else
+                let prev = ResizeArray<'T> 1
+                dict.[key] <- prev
+                prev.Add v
+        // Return the array-of-arrays.
+        let result = Array.zeroCreate dict.Count
+        let mutable i = 0
+        for group in dict do
+            result.[i] <- group.Key, group.Value.ToArray ()
+            i <- i + 1
+        result
+
 
 [<RequireQualifiedAccess>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Option =
-    ///<summary>
-    /// Check if value is null, if so return None. Otherwise return Some value
-    ///</summary>
     let inline ofNull value =
         if obj.ReferenceEquals(value, null) then None else Some value
 
-    ///<summary>
-    /// If the Nullable has a value return it wrappen in a <code>Some</code>, otherwise <code>None</code>
-    ///</summary>
     let inline ofNullable (value: Nullable<'T>) =
         if value.HasValue then Some value.Value else None
 
@@ -220,16 +312,6 @@ module Option =
         match value with
         | Some x -> Nullable<_> x
         | None -> Nullable<_> ()
-
-    ///<summary>
-    /// Unwrap an option into its value or None -> null
-    ///</summary>
-    // unfortunately this is useful for working with parts of the VSSDK
-    let inline toNull (option:'a option when 'a:null) =
-        match option with
-        | None -> null
-        | Some value -> value
-
 
     let inline attempt (f: unit -> 'T) = try Some <| f() with _ -> None
 
@@ -256,13 +338,6 @@ module Option =
         function
         | Some x -> Some x
         | None -> f()
-
-    /// Gets the option if Some x, otherwise the supplied default value.
-    let inline mapOrElse mapfn alt opt =
-        match opt with
-        | Some v -> mapfn v
-        | None -> alt
-
 
     /// Some(Some x) -> Some x | None -> None
     let inline flatten x =
@@ -312,8 +387,7 @@ module Async =
             let len = Array.length array
             let result = Array.zeroCreate len
 
-            async {
-                // Apply the mapping function to each array element.
+            async { // Apply the mapping function to each array element.
                 for i in 0 .. len - 1 do
                     let! mappedValue = mapping array.[i]
                     result.[i] <- mappedValue
@@ -376,195 +450,6 @@ module Async =
             mapImpl (mapping, [], list)
 
 
-[<RequireQualifiedAccess>]
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module String =
-
-    let inline toCharArray (str:string) = str.ToCharArray ()
-
-    let lowerCaseFirstChar (str: string) =
-        match str with
-        | null -> null
-        | str ->
-            match str.ToCharArray () with
-            | [||] -> str
-            | arr when Char.IsUpper arr.[0] ->
-                arr.[0] <- Char.ToLower arr.[0]
-                String (arr)
-            | _ -> str
-
-    let extractTrailingIndex (str: string) =
-        match str with
-        | null -> null, None
-        | _ ->
-            let chars =
-                let mutable charr = (str.ToCharArray ())
-                Array.revInPlace &charr; charr
-            let digits =
-                let mutable darr = chars |> Array.takeWhile Char.IsDigit
-                Array.revInPlace &darr; darr
-            String digits
-            |> function
-               | "" -> str, None
-               | index -> str.Substring (0, str.Length - index.Length), Some (int index)
-
-    /// Remove all trailing and leading whitespace from the string
-    /// return null if the string is null
-    let inline trim (value: string) = match value with null -> null | x -> x.Trim()
-
-    /// Splits a string into substrings based on the strings in the array seperators
-    let inline split options (separator: string[]) (value: string) =
-        match value with null -> null | x -> x.Split(separator, options)
-
-    let (|StartsWith|_|) pattern value =
-        if String.IsNullOrWhiteSpace(value) then
-            None
-        elif value.StartsWith(pattern) then
-            Some value
-        else None
-
-    let (|Contains|_|) pattern value =
-        if String.IsNullOrWhiteSpace(value) then
-            None
-        elif value.Contains(pattern) then
-            Some value
-        else None
-
-    open System.IO
-
-    let getLines (str: string) =
-        use reader = new StringReader(str)
-        [|
-        let line = ref (reader.ReadLine())
-        while isNotNull (!line) do
-            yield !line
-            line := reader.ReadLine()
-        if str.EndsWith("\n") then
-            // last trailing space not returned
-            // http://stackoverflow.com/questions/19365404/stringreader-omits-trailing-linebreak
-            yield String.Empty
-        |]
-
-    let getNonEmptyLines (str: string) =
-        use reader = new StringReader (str)
-        [|
-        let line = ref (reader.ReadLine())
-        while isNotNull (!line) do
-            if (!line).Length > 0 then
-                yield !line
-            line := reader.ReadLine()
-        |]
-
-    open System.Text
-    /// Use an accumulation function to create a new string applying a transformation
-    /// to every non-empty line in the string
-    let mapNonEmptyLines (folder: StringBuilder -> string -> StringBuilder) (str: string) =
-        let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt folder
-        use reader = new StringReader (str)
-        let sb = StringBuilder ()
-        let mutable line = reader.ReadLine ()
-        while isNotNull line do
-            if line.Length > 0 then
-                f.Invoke (sb,line) |> ignore
-            line <- reader.ReadLine()
-        string sb
-
-    /// Parse a string to find the first nonempty line
-    /// Return null if the string was null or only contained empty lines
-    let firstNonEmptyLine (str: string) =
-        use reader = new StringReader (str)
-        let rec loop (line:string) =
-            if isNull line then None
-            elif  line.Length > 0 then Some line
-            else loop (reader.ReadLine())
-        loop (reader.ReadLine())
-
-open System.Text
-[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module StringBuilder =
-    /// Pipelining function for appending a string to a stringbuilder
-    let inline append   (str:string) (sb:StringBuilder) = sb.Append str
-
-    /// Pipelining function for appending a string with a '\n' to a stringbuilder
-    let inline appendln (str:string) (sb:StringBuilder) = sb.AppendLine str
-
-    /// SideEffecting function for appending a string to a stringbuilder
-    let appendi (str:string) (sb:StringBuilder) = sb.Append str |> ignore
-
-    /// SideEffecting function for appending a string with a '\n' to a stringbuilder
-    let appendlni (str:string) (sb:StringBuilder) = sb.AppendLine str |> ignore
-
-module Reflection =
-    open System.Reflection
-
-    type private Expr = System.Linq.Expressions.Expression
-    let instanceNonPublic = BindingFlags.Instance ||| BindingFlags.NonPublic
-
-    let precompileFieldGet<'R>(f : FieldInfo) =
-        let p = Expr.Parameter(typeof<obj>)
-        let lambda = Expr.Lambda<Func<obj, 'R>>(Expr.Field(Expr.Convert(p, f.DeclaringType) :> Expr, f) :> Expr, p)
-        lambda.Compile().Invoke
-
-open System.Text
-open System.Diagnostics
-
-type Profiler() =
-    let measures = ResizeArray()
-    let total = Stopwatch.StartNew()
-
-    member __.Time msg f =
-        let sw = Stopwatch.StartNew()
-        let res = f()
-        measures.Add(msg, sw.Elapsed)
-        res
-
-    member __.TimeAsync msg f = async {
-        let sw = Stopwatch.StartNew()
-        let! res = f()
-        measures.Add(msg, sw.Elapsed)
-        return res }
-
-    member __.Stop() = total.Stop()
-
-    member __.Result =
-        sprintf
-            "\nTotal = %O\n%s"
-            total.Elapsed
-            (measures
-             |> Seq.groupBy (fun (msg, _) -> msg)
-             |> Seq.map (fun (msg, ts) ->
-                 msg, TimeSpan.FromTicks (ts |> Seq.sumBy (fun (_, t) -> t.Ticks)))
-             |> Seq.sortBy (fun (_, t) -> -t)
-             |> Seq.fold (fun (acc: StringBuilder) (msg, t) ->
-                 acc.AppendLine (sprintf "%s, %O" msg t)) (StringBuilder())
-             |> fun sb -> string sb)
-
-
-open System.Collections.Generic
-
-type DictionaryBuilder<'key,'value when 'key:equality> () =
-    let dict = Dictionary<'key,'value>()
-
-    member __.Zero  ()  = dict
-    member __.Yield (_) = dict
-    [<CustomOperation "add">]
-    ///<summary>    Add the key and value to the dictionary if not already present
-    ///<para/>      overwrite the value for the key if the key is present
-    ///</summary>
-    member __.Add (dict:Dictionary<'key,'value>,(key,value)) =
-        if dict.ContainsKey key then dict.[key] <- value
-        else dict.Add (key,value)
-
-    [<CustomOperation "tryAdd">]
-    ///<summary>    Add the key and value to the dictionary if not already present
-    ///<para/>      If the key is present don't add
-    ///</summary>
-    member __.TryAdd (dict:Dictionary<'key,'value>,(key,value)) =
-        if dict.ContainsKey key then () else
-        dict.Add (key,value)
-
-
-
 
 /// Maybe computation expression builder, copied from ExtCore library
 /// https://github.com/jack-pappas/ExtCore/blob/master/ExtCore/Control.fs
@@ -583,7 +468,7 @@ type MaybeBuilder () =
     // unit -> M<'T>
     [<DebuggerStepThrough>]
     member inline __.Zero (): unit option =
-        Some ()  // TODO: Should this be None?
+        Some ()     // TODO: Should this be None?
 
     // (unit -> M<'T>) -> M<'T>
     [<DebuggerStepThrough>]
@@ -596,8 +481,10 @@ type MaybeBuilder () =
     [<DebuggerStepThrough>]
     member inline __.Combine (r1, r2: 'T option): 'T option =
         match r1 with
-        | None -> None
-        | Some () -> r2
+        | None ->
+            None
+        | Some () ->
+            r2
 
     // M<'T> * ('T -> M<'U>) -> M<'U>
     [<DebuggerStepThrough>]
@@ -708,80 +595,6 @@ module AsyncMaybe =
     let inline liftAsync (async : Async<'T>) : Async<_ option> =
         async |> Async.map Some
 
-
-
-[<Sealed>][<DebuggerStepThrough>]
-// this can only return types that might be null
-// unwraps options into null too
-type MaybeNullBuilder () =
-    // 'T -> M<'T>
-
-    member inline __.Return value: 'T when 'T:null =
-        value
-
-    // M<'T> -> M<'T>
-    member inline __.ReturnFrom (option:'T option):'T when 'T:null =
-        match option with
-        | None -> null
-        | Some value -> value
-
-    // unit -> M<'T>
-    member inline __.Zero () = Some null
-
-
-    // (unit -> M<'T>) -> M<'T>
-    member __.Delay (f: _ -> 'T option): 'T option when 'T:null =
-        f ()
-
-    // M<'T> -> M<'T> -> M<'T>
-    // or
-    // M<unit> -> M<'T> -> M<'T>
-    member inline __.Combine (r1, r2: 'T option): 'T option when 'T:null =
-        match r1 with
-        | None -> None
-        | Some () -> r2
-
-    // M<'T> * ('T -> M<'U>) -> M<'U>
-    member inline __.Bind (value:'T option, f: 'T -> 'U option): 'U option when 'T:null and 'U:null  =
-        Option.bind f value
-
-    // 'T * ('T -> M<'U>) -> M<'U> when 'U :> IDisposable
-    member __.Using (resource: ('T :> System.IDisposable), body: _ -> _ option): _ option =
-        try body resource
-        finally
-            if not <| obj.ReferenceEquals (null, box resource) then
-                resource.Dispose ()
-
-    // (unit -> bool) * M<'T> -> M<'T>
-    member x.While (guard, body: _ option): _ option =
-        if guard () then
-            // OPTIMIZE: This could be simplified so we don't need to make calls to Bind and While.
-//            x.Bind (body, (fun _ -> x.While (guard, body)))
-            Option.bind (fun _ -> x.While (guard, body)) body
-        else
-            x.Zero ()
-
-    // seq<'T> * ('T -> M<'U>) -> M<'U>
-    // or
-    // seq<'T> * ('T -> M<'U>) -> seq<M<'U>>
-    member x.For (sequence: seq<_>, body: 'T -> _ option): _ option =
-        // OPTIMIZE: This could be simplified so we don't need to make calls to Using, While, Delay.
-        using (sequence.GetEnumerator()) (fun enum ->
-//            x.While ( enum.MoveNext, x.Delay (fun _ -> body enum.Current)))
-            x.While ( enum.MoveNext,  body enum.Current))
-
-    member __.Run (option:'T option) : 'T when 'T:null=
-        match option with
-        | None -> null
-        | Some value -> value
-
-    member __.Run (delayFunc:unit->'T option) : 'T when 'T:null=
-        match delayFunc() with
-        | None -> null
-        | Some value -> value
-
-
-
 [<AutoOpen; CompilationRepresentation (CompilationRepresentationFlags.ModuleSuffix)>]
 module Pervasive =
     open System.Diagnostics
@@ -794,9 +607,15 @@ module Pervasive =
     Debug.AutoFlush <- true
 #endif
 
-    let maybe = MaybeBuilder()
-    let maybeNull = MaybeNullBuilder()
-    let asyncMaybe = AsyncMaybeBuilder()
+
+
+    let tryCast<'T> (o: obj): 'T option =
+        match o with
+        | null -> None
+        | :? 'T as a -> Some a
+        | _ ->
+            debug "Cannot cast %O to %O" (o.GetType()) typeof<'T>.Name
+            None
 
     /// Load times used to reset type checking properly on script/project load/unload. It just has to be unique for each project load/reload.
     /// Not yet sure if this works for scripts.
@@ -826,54 +645,6 @@ module Pervasive =
                 cache.[x] <- res
                 res
 
-    type Microsoft.FSharp.Control.Async with
-        static member EitherEvent(ev1: IObservable<'T>, ev2: IObservable<'U>) =
-            synchronize (fun f ->
-                Async.FromContinuations((fun (cont, _econt, _ccont) ->
-                    let rec callback1 =
-                        (fun value ->
-                        remover1.Dispose()
-                        remover2.Dispose()
-                        f cont (Choice1Of2(value)))
-
-                    and callback2 =
-                        (fun value ->
-                        remover1.Dispose()
-                        remover2.Dispose()
-                        f cont (Choice2Of2(value)))
-
-                    and remover1: IDisposable = ev1.Subscribe(callback1)
-                    and remover2: IDisposable = ev2.Subscribe(callback2)
-                    ())))
-
-
-    type Atom<'T when 'T: not struct>(value: 'T) =
-        let refCell = ref value
-
-        let rec swap f =
-            let currentValue = !refCell
-            let result = Interlocked.CompareExchange<'T>(refCell, f currentValue, currentValue)
-            if obj.ReferenceEquals(result, currentValue) then result
-            else
-                Thread.SpinWait 20
-                swap f
-
-        member __.Value = !refCell
-        member __.Swap(f: 'T -> 'T) = swap f
-
-    open System.IO
-
-    type Path with
-        static member GetFullPathSafe path =
-            try Path.GetFullPath path
-            with _ -> path
-
-        static member GetFileNameSafe path =
-            try Path.GetFileName path
-            with _ -> path
-
-    /// Path.Combine
-    let (</>) path1 path2 = Path.Combine (path1, path2)
 
     type IDictionary<'k,'v> with //'key,'value when 'key:equality> with
         [<CustomOperation "add">]
@@ -901,6 +672,58 @@ module Pervasive =
         member inline x.Iter action =
             for idx in 0..x.Count-1 do action x.[idx]
 
+
+    type Microsoft.FSharp.Control.Async with
+        static member EitherEvent(ev1: IObservable<'T>, ev2: IObservable<'U>) =
+            synchronize (fun f ->
+                Async.FromContinuations((fun (cont, _econt, _ccont) ->
+                    let rec callback1 =
+                        (fun value ->
+                        remover1.Dispose()
+                        remover2.Dispose()
+                        f cont (Choice1Of2(value)))
+
+                    and callback2 =
+                        (fun value ->
+                        remover1.Dispose()
+                        remover2.Dispose()
+                        f cont (Choice2Of2(value)))
+
+                    and remover1: IDisposable = ev1.Subscribe(callback1)
+                    and remover2: IDisposable = ev2.Subscribe(callback2)
+                    ())))
+
+    type Atom<'T when 'T: not struct>(value: 'T) =
+        let refCell = ref value
+
+        let rec swap f =
+            let currentValue = !refCell
+            let result = Interlocked.CompareExchange<'T>(refCell, f currentValue, currentValue)
+            if obj.ReferenceEquals(result, currentValue) then result
+            else
+                Thread.SpinWait 20
+                swap f
+
+        member __.Value = !refCell
+        member __.Swap(f: 'T -> 'T) = swap f
+
+    open System.IO
+
+    type Path with
+        static member GetFullPathSafe path =
+            try Path.GetFullPath path
+            with _ -> path
+
+        static member GetFileNameSafe path =
+            try Path.GetFileName path
+            with _ -> path
+
+
+
+    let maybe = MaybeBuilder()
+    let asyncMaybe = AsyncMaybeBuilder()
+
+
 [<RequireQualifiedAccess>]
 module Dict =
     open System.Collections.Generic
@@ -922,3 +745,164 @@ module Dict =
         let dict = Dictionary()
         for k, v in xs do dict.[k] <- v
         dict
+
+[<RequireQualifiedAccess>]
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module String =
+
+    let inline toCharArray (str:string) = str.ToCharArray()
+
+    let lowerCaseFirstChar (str: string) =
+        if String.IsNullOrEmpty str
+         || Char.IsLower(str, 0) then str else
+        let strArr = toCharArray str
+        match Array.tryHead strArr with
+        | None -> str
+        | Some c  ->
+            strArr.[0] <- Char.ToLower c
+            String (strArr)
+
+
+    let extractTrailingIndex (str: string) =
+        match str with
+        | null -> null, None
+        | _ ->
+            let mutable charr = str.ToCharArray()
+            Array.revInPlace charr
+            let mutable  digits = Array.takeWhile Char.IsDigit charr
+            Array.revInPlace digits
+            String digits
+            |> function
+               | "" -> str, None
+               | index -> str.Substring (0, str.Length - index.Length), Some (int index)
+
+    /// Remove all trailing and leading whitespace from the string
+    /// return null if the string is null
+    let trim (value: string) = if isNull value then null else value.Trim()
+
+    /// Splits a string into substrings based on the strings in the array seperators
+    let split options (separator: string[]) (value: string) =
+        if isNull value  then null else value.Split(separator, options)
+
+    let (|StartsWith|_|) pattern value =
+        if String.IsNullOrWhiteSpace value then
+            None
+        elif value.StartsWith pattern then
+            Some value
+        else None
+
+    let (|Contains|_|) pattern value =
+        if String.IsNullOrWhiteSpace value then
+            None
+        elif value.Contains pattern then
+            Some value
+        else None
+
+    open System.IO
+
+    let getLines (str: string) =
+        use reader = new StringReader(str)
+        [|
+        let line = ref (reader.ReadLine())
+        while isNotNull (!line) do
+            yield !line
+            line := reader.ReadLine()
+        if str.EndsWith("\n") then
+            // last trailing space not returned
+            // http://stackoverflow.com/questions/19365404/stringreader-omits-trailing-linebreak
+            yield String.Empty
+        |]
+
+    let getNonEmptyLines (str: string) =
+        use reader = new StringReader(str)
+        [|
+        let line = ref (reader.ReadLine())
+        while isNotNull (!line) do
+            if (!line).Length > 0 then
+                yield !line
+            line := reader.ReadLine()
+        |]
+
+    open System.Text
+    /// Use an accumulation function to create a new string applying a transformation
+    /// to every non-empty line in the string
+    let mapNonEmptyLines (folder: StringBuilder -> string -> StringBuilder) (str: string) =
+        let f = OptimizedClosures.FSharpFunc<_,_,_>.Adapt folder
+        use reader = new StringReader (str)
+        let sb = StringBuilder ()
+        let mutable line = reader.ReadLine ()
+        while isNotNull line do
+            if line.Length > 0 then
+                f.Invoke (sb,line) |> ignore
+            line <- reader.ReadLine()
+        string sb
+
+    /// Parse a string to find the first nonempty line
+    /// Return null if the string was null or only contained empty lines
+    let firstNonEmptyLine (str: string) =
+        use reader = new StringReader (str)
+        let rec loop (line:string) =
+            if isNull line then None
+            elif  line.Length > 0 then Some line
+            else loop (reader.ReadLine())
+        loop (reader.ReadLine())
+
+open System.Text
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module StringBuilder =
+    /// Pipelining function for appending a string to a stringbuilder
+    let inline append   (str:string) (sb:StringBuilder) = sb.Append str
+
+    /// Pipelining function for appending a string with a '\n' to a stringbuilder
+    let inline appendLine (str:string) (sb:StringBuilder) = sb.AppendLine str
+
+    /// SideEffecting function for appending a string to a stringbuilder
+    let inline appendi (str:string) (sb:StringBuilder) = sb.Append str |> ignore
+
+    /// SideEffecting function for appending a string with a '\n' to a stringbuilder
+    let inline appendLinei (str:string) (sb:StringBuilder) = sb.AppendLine str |> ignore
+
+module Reflection =
+    open System.Reflection
+
+    type private Expr = System.Linq.Expressions.Expression
+    let instanceNonPublic = BindingFlags.Instance ||| BindingFlags.NonPublic
+
+    let precompileFieldGet<'R>(f : FieldInfo) =
+        let p = Expr.Parameter(typeof<obj>)
+        let lambda = Expr.Lambda<Func<obj, 'R>>(Expr.Field(Expr.Convert(p, f.DeclaringType) :> Expr, f) :> Expr, p)
+        lambda.Compile().Invoke
+
+open System.Text
+open System.Diagnostics
+
+type Profiler() =
+    let measures = ResizeArray()
+    let total = Stopwatch.StartNew()
+
+    member __.Time msg f =
+        let sw = Stopwatch.StartNew()
+        let res = f()
+        measures.Add(msg, sw.Elapsed)
+        res
+
+    member __.TimeAsync msg f = async {
+        let sw = Stopwatch.StartNew()
+        let! res = f()
+        measures.Add(msg, sw.Elapsed)
+        return res }
+
+    member __.Stop() = total.Stop()
+
+    member __.Result =
+        sprintf
+            "\nTotal = %O\n%s"
+            total.Elapsed
+            (measures
+             |> Seq.groupBy (fun (msg, _) -> msg)
+             |> Seq.map (fun (msg, ts) ->
+                 msg, TimeSpan.FromTicks (ts |> Seq.sumBy (fun (_, t) -> t.Ticks)))
+             |> Seq.sortBy (fun (_, t) -> -t)
+             |> Seq.fold (fun (acc: StringBuilder) (msg, t) ->
+                 acc.AppendLine (sprintf "%s, %O" msg t)) (StringBuilder())
+             |> fun sb -> string sb)
