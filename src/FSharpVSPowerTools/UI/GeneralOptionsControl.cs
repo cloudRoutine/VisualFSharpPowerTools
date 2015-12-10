@@ -5,6 +5,7 @@ namespace FSharpVSPowerTools
 {
     public partial class GeneralOptionsControl : UserControl
     {
+        const string vs2015Suffix = " (VS2015+ only)";
         private GeneralOptionsPage _optionsPage;
         public GeneralOptionsControl(GeneralOptionsPage optionsPage)
         {
@@ -187,13 +188,14 @@ namespace FSharpVSPowerTools
             QuickInfoPanelEnabled = _optionsPage.QuickInfoPanelEnabled;
             LinterEnabled = _optionsPage.LinterEnabled;
             OutliningEnabled = _optionsPage.OutliningEnabled;
-            PeekDefinitionEnabled = _optionsPage.PeekDefinitionEnabled;
+           // PeekDefinitionEnabled = _optionsPage.PeekDefinitionEnabled;
 
-            if (!_optionsPage.PeekDefinitionAvailable)
-            {
-                chbPeekDefinition.Enabled = false;
-                chbPeekDefinition.Text = chbPeekDefinition.Text + " (VS2015+ only)";
-            }
+            //if (!_optionsPage.PeekDefinitionAvailable)
+            //{
+            //    chbPeekDefinition.Enabled = false;
+            //    var peekDefinitionText = chbPeekDefinition.Text;
+            //    chbPeekDefinition.Text = peekDefinitionText.Contains(vs2015Suffix) ? peekDefinitionText : peekDefinitionText + vs2015Suffix;
+            //}
         }
     }
 }
