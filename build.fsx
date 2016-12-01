@@ -115,6 +115,36 @@ Target "Build" (fun _ ->
     |> ignore
 )
 
+
+Target "BuildCore" (fun _ ->
+    // We would like to build only one solution
+    !! ("src"</>project</>project+".fsproj")
+    |> MSBuildRelease "bin/core" "Rebuild"
+    |> ignore
+)
+
+Target "BuildCoreTests" (fun _ ->
+    !! ("tests"</>"FSharp.Editing.Tests"</>"FSharp.Editing.Tests.fsproj")
+    |> MSBuildRelease "bin/tests" "Rebuild"
+    |> ignore
+)
+
+
+
+Target "RunCoreTests" (fun _ ->
+    [@"bin/tests/FSharp.Editing.Tests.dll"]
+    |> NUnit3 (fun p ->
+        let param =
+            { p with
+                ShadowCopy = false
+                TimeOut = TimeSpan.FromMinutes 20.
+                //Framework = NUnit3Runtime.Net45
+                Domain = NUnit3DomainModel.MultipleDomainModel 
+                //Workers = Some 1
+                ResultSpecs = ["TestResults.xml"] }
+        if isAppVeyorBuild then { param with Where = "cat != AppVeyorLongRunning" } else param)
+)
+
 // Build test projects in Debug mode in order to provide correct paths for multi-project scenarios
 Target "BuildTests" (fun _ ->    
     !! "tests/data/**/*.sln"
@@ -340,7 +370,10 @@ Target "EditToolRelease" DoNothing
   ==> "AssemblyInfo"
   ==> "TravisCI"
 
-"UnitTests"
+"Clean"
+  ==> "BuildCore"
+  ==> "BuildCoreTests"
+  ==> "RunCoreTests"
   ==> "BuildNupkg"
   ==> "EditToolRelease"
 

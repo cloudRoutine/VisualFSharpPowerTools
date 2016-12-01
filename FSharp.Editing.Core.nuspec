@@ -15,6 +15,6 @@
     @dependencies@
   </metadata>
   <files>
-    <file src="..\bin\FSharp.Editing.Core.*" target="lib/net45" />
+    <file src="..\bin\core\FSharp.Editing.*" target="lib/net45" />
   </files>
 </package>

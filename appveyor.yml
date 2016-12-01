@@ -3,5 +3,8 @@ build_script:
 test: off
 
 artifacts:
-  - path: bin\*.vsix
   - path: nupkg\*.nupkg
+
+
+after_build:
+  - ps: Push-AppveyorArtifact nupkg\*.nupkg
