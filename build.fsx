@@ -21,7 +21,8 @@ open Fake.Testing
 
 // The name of the project 
 // (used by attributes in AssemblyInfo, name of a NuGet package and directory in 'src')
-let project = "FSharpVSPowerTools"
+//let project = "FSharpVSPowerTools"
+let project = "FSharp.Editing"
 
 // Short summary of the project
 // (used as description in AssemblyInfo and as a short summary for NuGet package)
@@ -31,7 +32,7 @@ let summary = "A collection of additional commands for F# in Visual Studio"
 // (used as a description for NuGet package; line breaks are automatically cleaned up)
 let description = """The core project of Visual F# Power Tools includes IDE-agnostic features intended to be used in different F# IDEs and editors."""
 // List of author names (for NuGet package)
-let authors = [ "Anh-Dung Phan"; "Vasily Kirichenko"; "Denis Ok" ]
+let authors = [ "Anh-Dung Phan"; "Vasily Kirichenko"; "Jared Hester"; "Denis Ok" ]
 // Tags for your project (for NuGet package)
 let tags = "F# fsharp formatting editing highlighting navigation refactoring"
 
@@ -169,8 +170,9 @@ Target "IntegrationTests" (fun _ ->
 // --------------------------------------------------------------------------------------
 // Build a NuGet package
 
-Target "PublishNuGet" (fun _ ->
+Target "BuildNupkg" (fun _ ->
     NuGet (fun p -> 
+        ensureDirectory "nupkg"
         { p with   
             Authors = authors
             Project = project + ".Core"
@@ -179,9 +181,8 @@ Target "PublishNuGet" (fun _ ->
             Version = release.NugetVersion
             ReleaseNotes = String.Join(Environment.NewLine, release.Notes)
             Tags = tags
-            OutputPath = "bin"
-            AccessKey = getBuildParamOrDefault "nugetkey" ""
-            Publish = true
+            OutputPath = "nupkg"
+            Publish = false
             Dependencies = [ "FSharp.Compiler.Service", GetPackageVersion "packages" "FSharp.Compiler.Service" ] })
         (project + ".Core.nuspec")
 )
@@ -320,6 +321,8 @@ Target "TravisCI" (fun _ ->
   )
 )
 
+Target "EditToolRelease" DoNothing
+
 "Clean"
   =?> ("BuildVersion", isAppVeyorBuild)
   ==> "AssemblyInfo"
@@ -337,9 +340,16 @@ Target "TravisCI" (fun _ ->
   ==> "AssemblyInfo"
   ==> "TravisCI"
 
+"UnitTests"
+  ==> "BuildNupkg"
+  ==> "EditToolRelease"
+
+
+
+
 "Release"
   ==> "UploadToGallery"
-  ==> "PublishNuGet"
+  ?=> "BuildNupkg"
   ==> "ReleaseAll"
 
 "Main"
@@ -351,4 +361,5 @@ Target "TravisCI" (fun _ ->
   ==> "ReleaseDocs"
   ==> "Release"
 
-RunTargetOrDefault "Main"
+//RunTargetOrDefault "Main"
+RunTargetOrDefault "EditToolRelease"

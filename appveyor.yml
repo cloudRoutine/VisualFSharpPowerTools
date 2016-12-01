@@ -1,5 +1,7 @@
 build_script:
-  - ps: .\build.cmd
+  - ps: .\build.cmd "EditToolRelease"
 test: off
+
 artifacts:
   - path: bin\*.vsix
+  - path: nupkg\*.nupkg
